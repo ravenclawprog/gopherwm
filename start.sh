@@ -1,0 +1,15 @@
+#!/bin/bash
+
+XEPHYR=$(whereis -b Xephyr | sed -E 's/^.*: ?//')
+if [ -z "$XEPHYR" ]; then
+    echo "Xephyr not found, exiting"
+    exit 1
+fi
+
+unset XDG_SEAT
+xinit ./xinitrc -- \
+    "$XEPHYR" \
+        :2 \
+        -br \
+        -screen 1280x1024 \
+        -host-cursor 

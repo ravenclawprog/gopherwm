@@ -1,0 +1,30 @@
+version: '3'
+
+vars:
+  BINARY_NAME: gopherwm
+
+tasks:
+  default:
+    deps: [build]
+    cmds:
+      - echo "Running app.."
+      - ./start.sh
+
+  build:
+    desc: "Compiling"
+    sources:
+      - ./**/*.go
+    generates:
+      - bin/{{.BINARY_NAME}}
+    cmds:
+      - go build -o bin/{{.BINARY_NAME}} main.go
+
+  test:
+    desc: "Run tests"
+    cmds:
+      - go test -v ./...
+
+  clean:
+    desc: "Remove compiled files"
+    cmds:
+      - rm -rf bin/
