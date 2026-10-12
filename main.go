@@ -10,6 +10,7 @@ package main
 import "C"
 import (
 	"fmt"
+	"gopherwm/idgen"
 	"math/rand/v2"
 	"slices"
 	"time"
@@ -136,6 +137,9 @@ func main() {
 	var start C.XButtonEvent
 	var ev C.XEvent
 	var rootRect WindowRect
+
+	id_gen := idgen.NewIDGenerator()
+	fmt.Println("generated data:", id_gen.Generate())
 
 	fmt.Printf("WM start\n")
 	dpy = C.XOpenDisplay(nil)

@@ -9,15 +9,23 @@ tasks:
     cmds:
       - echo "Running app.."
       - ./start.sh
+  fmt:
+    desc: code formatting
+    cmds:
+      - echo "Code formatting"
+      - go fmt ./...
 
   build:
     desc: "Compiling"
+    deps: [fmt]
     sources:
-      - ./**/*.go
+      - '*.go'
+      - './idgen/**/*.go'
+      - 'go.mod'
     generates:
       - bin/{{.BINARY_NAME}}
     cmds:
-      - go build -o bin/{{.BINARY_NAME}} main.go
+      - go build -v -o bin/{{.BINARY_NAME}} .
 
   test:
     desc: "Run tests"
