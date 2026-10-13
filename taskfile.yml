@@ -19,8 +19,7 @@ tasks:
     desc: "Compiling"
     deps: [fmt]
     sources:
-      - '*.go'
-      - './idgen/**/*.go'
+      - './**/*.go'
       - 'go.mod'
     generates:
       - bin/{{.BINARY_NAME}}
