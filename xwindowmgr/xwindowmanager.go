@@ -85,7 +85,7 @@ func (xm *XWindowManager) createFrameForWindow(windowContext xWindowContext) xWi
 
 	windowContext.frameWindowHandle = frameWin
 	// adjascent for exposure
-	C.XSelectInput(xm.display, frameWin, C.ExposureMask|C.SubstructureNotifyMask|C.ButtonPressMask)
+	C.XSelectInput(xm.display, frameWin, C.ExposureMask|C.ButtonPressMask)
 
 	// reparent the window
 	C.XReparentWindow(xm.display, windowContext.windowHandle, frameWin, TitlebarWidth, 0)
@@ -117,7 +117,7 @@ func (xm *XWindowManager) ScanExistingWindows() {
 			xm.xWindowContextManager.AddObject(newWindowContext)
 			xm.frames[newWindowContext.frameWindowHandle] = newWindowContext.windowHandle
 			C.XMapWindow(xm.display, newWindowContext.frameWindowHandle)
-			C.XMapWindow(xm.display, newWindowContext.windowHandle)
+			C.XMapSubwindows(xm.display, newWindowContext.windowHandle)
 		}
 	}
 }
@@ -256,16 +256,48 @@ func (xm *XWindowManager) Start(ctx context.Context) {
 					changes.height = cr.height
 					changes.border_width = cr.border_width
 
-					C.XConfigureWindow(xm.display, cr.window, C.uint(cr.value_mask), &changes)
+					var associatedFrame C.Window = C.None
+					for frameWin, clientWin := range xm.frames {
+						if clientWin == cr.window {
+							associatedFrame = frameWin
+							break
+						}
+					}
+
+					if associatedFrame != C.None {
+						changes.width = cr.width + TitlebarWidth
+						C.XConfigureWindow(xm.display, associatedFrame, C.uint(cr.value_mask), &changes)
+
+						C.XResizeWindow(xm.display, cr.window, C.uint(cr.width), C.uint(cr.height))
+					} else {
+						C.XConfigureWindow(xm.display, cr.window, C.uint(cr.value_mask), &changes)
+					}
+					C.XFlush(xm.display)
 				} else if evType == C.MapRequest {
 					fmt.Println("XWindowManager:Event:Map request")
 					mq := unionToXMapRequestEvent(ev)
-					newWindowContext := createXWindowContext(xm.display, mq.window)
-					newWindowContext = xm.createFrameForWindow(newWindowContext)
-					xm.xWindowContextManager.AddObject(newWindowContext)
-					xm.frames[newWindowContext.frameWindowHandle] = newWindowContext.windowHandle
-					C.XMapWindow(xm.display, newWindowContext.frameWindowHandle)
-					C.XMapWindow(xm.display, newWindowContext.windowHandle)
+					var existingFrame C.Window = C.None
+					for frameWin, clientWin := range xm.frames {
+						if clientWin == mq.window {
+							existingFrame = frameWin
+							break
+						}
+					}
+
+					if existingFrame != C.None {
+						fmt.Println("XWindowManager:Frame is already exist", existingFrame)
+						C.XMapWindow(xm.display, existingFrame)
+						C.XMapSubwindows(xm.display, existingFrame)
+					} else {
+						// Новое окно — создаем фрейм с нуля (ваш старый код)
+						newWindowContext := createXWindowContext(xm.display, mq.window)
+						newWindowContext = xm.createFrameForWindow(newWindowContext)
+						xm.xWindowContextManager.AddObject(newWindowContext)
+						xm.frames[newWindowContext.frameWindowHandle] = newWindowContext.windowHandle
+
+						C.XMapWindow(xm.display, newWindowContext.frameWindowHandle)
+						C.XMapSubwindows(xm.display, newWindowContext.frameWindowHandle)
+					}
 					C.XFlush(xm.display)
 				} else if evType == C.Expose {
 					fmt.Println("XWindowManager:Event:expose")
@@ -366,6 +398,41 @@ func (xm *XWindowManager) Start(ctx context.Context) {
 					if xm.activeFrame != C.None {
 						C.XUngrabPointer(xm.display, C.CurrentTime)
 						xm.activeFrame = C.None
+						C.XFlush(xm.display)
+					}
+				} else if evType == C.UnmapNotify {
+					unmapEvent := (*C.XUnmapEvent)(unsafe.Pointer(&ev))
+					fmt.Println("XWindowManager:Event: UnmapNotify for window:", unmapEvent.window)
+
+					var targetFrame C.Window = C.None
+					for frameWin, clientWin := range xm.frames {
+						if clientWin == unmapEvent.window {
+							targetFrame = frameWin
+							break
+						}
+					}
+
+					if targetFrame != C.None {
+						C.XUnmapWindow(xm.display, targetFrame)
+						C.XFlush(xm.display)
+					}
+
+				} else if evType == C.DestroyNotify {
+					destroyEvent := (*C.XDestroyWindowEvent)(unsafe.Pointer(&ev))
+					fmt.Println("XWindowManager:Event: DestroyNotify for win:", destroyEvent.window)
+
+					var targetFrame C.Window = C.None
+					for frameWin, clientWin := range xm.frames {
+						if clientWin == destroyEvent.window {
+							targetFrame = frameWin
+							break
+						}
+					}
+
+					if targetFrame != C.None {
+						C.XUnmapWindow(xm.display, targetFrame)
+						C.XDestroyWindow(xm.display, targetFrame)
+						delete(xm.frames, targetFrame)
 						C.XFlush(xm.display)
 					}
 				}

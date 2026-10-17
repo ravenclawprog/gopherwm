@@ -44,3 +44,9 @@ func (om *ObjectManager[T]) GetObject(index uint64) (T, error) {
 	}
 	return om.objects[index], nil
 }
+
+func (om *ObjectManager[T]) RemoveObject(index uint64) {
+	defer om.mutex.Unlock()
+	om.mutex.Lock()
+	delete(om.objects, index)
+}
