@@ -26,10 +26,10 @@ func main() {
 	}
 
 	xManager.GrabKey(uint64(C.XK_F1))
-	xManager.GrabButton(uint32(C.Button1), uint32(C.ButtonPressMask|C.ButtonReleaseMask|C.PointerMotionMask))
-	xManager.GrabButton(uint32(C.Button3), uint32(C.ButtonPressMask|C.ButtonReleaseMask|C.PointerMotionMask))
-	xManager.SelectInput(int64(C.KeyPressMask | C.SubstructureNotifyMask))
-
+	//xManager.GrabButton(uint32(C.Button1), uint32(C.ButtonPressMask|C.ButtonReleaseMask|C.PointerMotionMask))
+	//xManager.GrabButton(uint32(C.Button3), uint32(C.ButtonPressMask|C.ButtonReleaseMask|C.PointerMotionMask))
+	xManager.SelectInput(int64(C.KeyPressMask | C.SubstructureRedirectMask | C.SubstructureNotifyMask))
+	xManager.Sync(false)
 	xManager.Start(ctx)
 
 	// wait till Done

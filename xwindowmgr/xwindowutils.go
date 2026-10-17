@@ -19,6 +19,24 @@ func unionToXKeyEvent(cbytes [192]byte) (result *C.XKeyEvent) {
 	return cast
 }
 
+func unionToXMapRequestEvent(cbytes [192]byte) (result *C.XMapRequestEvent) {
+	var addr *byte = &cbytes[0]
+	var cast *C.XMapRequestEvent = (*C.XMapRequestEvent)(unsafe.Pointer(addr))
+	return cast
+}
+
+func unionToXConfigureRequestEvent(cbytes [192]byte) (result *C.XConfigureRequestEvent) {
+	var addr *byte = &cbytes[0]
+	var cast *C.XConfigureRequestEvent = (*C.XConfigureRequestEvent)(unsafe.Pointer(addr))
+	return cast
+}
+
+func unionToXExposeEvent(cbytes [192]byte) (result *C.XExposeEvent) {
+	var addr *byte = &cbytes[0]
+	var cast *C.XExposeEvent = (*C.XExposeEvent)(unsafe.Pointer(addr))
+	return cast
+}
+
 func unionToXMapEvent(cbytes [192]byte) (result *C.XMapEvent) {
 	var addr *byte = &cbytes[0]
 	var cast *C.XMapEvent = (*C.XMapEvent)(unsafe.Pointer(addr))

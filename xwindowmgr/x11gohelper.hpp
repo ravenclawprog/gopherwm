@@ -1,6 +1,7 @@
 #pragma once
 
 #include <X11/Xlib.h>
+#include <stdlib.h>
 #include <string.h>
 
 static inline Window _DefaultRootWindow(Display *display) {
@@ -17,4 +18,12 @@ static inline void send_quit_event(Display *dpy, Window win) {
 
     XSendEvent(dpy, win, False, NoEventMask, (XEvent*)&ev);
     XFlush(dpy); // Срочно проталкиваем в X-сервер
+}
+
+static inline char* get_window_name(Display *dpy, Window win) {
+    char *name = NULL;
+    if (XFetchName(dpy, win, &name) && name) {
+        return name;
+    }
+    return NULL;
 }

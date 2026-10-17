@@ -11,19 +11,54 @@ package xwindowmgr
 import "C"
 import (
 	"context"
+	"errors"
 	"fmt"
 	"gopherwm/manager"
+	"os"
+	"os/exec"
 	"sync/atomic"
 	"time"
+	"unsafe"
 )
+
+const TitlebarWidth = 24
 
 type XWindowManager struct {
 	xWindowContextManager manager.ObjectManager[xWindowContext]
 	display               *C.Display
+	screen                C.int
 	rootID                uint64
+
+	frames map[C.Window]C.Window
 
 	isClosing atomic.Bool
 	loopDone  chan struct{}
+
+	activeFrame C.Window
+	startMouseX C.int
+	startMouseY C.int
+	startAttr   C.XWindowAttributes
+}
+
+func NewXWindowManager() (*XWindowManager, error) {
+	tmpDisplay := C.XOpenDisplay(nil)
+	if tmpDisplay == nil {
+		return nil, errors.New("Cannot open display")
+	}
+	tmpScreen := C.XDefaultScreen(tmpDisplay)
+
+	ret := &XWindowManager{
+		xWindowContextManager: *manager.NewObjectManager[xWindowContext](),
+		display:               tmpDisplay,
+		screen:                tmpScreen,
+		frames:                make(map[C.Window]C.Window),
+		loopDone:              make(chan struct{}),
+	}
+	rootWindow := C._DefaultRootWindow(tmpDisplay)
+	fmt.Printf("RootWindow::%d\n", rootWindow)
+	rootWindowContext := createXWindowContext(tmpDisplay, rootWindow)
+	ret.rootID = ret.xWindowContextManager.AddObject(rootWindowContext)
+	return ret, nil
 }
 
 func createXWindowContext(display *C.Display, window C.Window) xWindowContext {
@@ -35,26 +70,79 @@ func createXWindowContext(display *C.Display, window C.Window) xWindowContext {
 	var outDepth C.uint
 
 	C.XGetGeometry(display, ret.windowHandle, &outWindow, &(ret.rect.x), &(ret.rect.y), &(ret.rect.width), &(ret.rect.height), &outBorderWidth, &outDepth)
-	fmt.Printf("CreatingContext.Window:%d\n", ret.windowHandle)
 	return ret
 }
 
-func NewXWindowManager() (*XWindowManager, error) {
-	tmpDisplay := C.XOpenDisplay(nil)
-	if tmpDisplay == nil {
-		return nil, fmt.Errorf("Cannot open display, res:%d")
-	}
+func (xm *XWindowManager) createFrameForWindow(windowContext xWindowContext) xWindowContext {
+	rootContext, _ := xm.xWindowContextManager.GetObject(xm.rootID)
 
-	ret := &XWindowManager{
-		xWindowContextManager: *manager.NewObjectManager[xWindowContext](),
-		display:               tmpDisplay,
-		loopDone:              make(chan struct{}),
+	frameWidth := windowContext.rect.width + TitlebarWidth
+	frameWin := C.XCreateSimpleWindow(
+		xm.display, rootContext.windowHandle,
+		windowContext.rect.x, windowContext.rect.y, frameWidth, windowContext.rect.height,
+		1, C.XBlackPixel(xm.display, xm.screen), C.XWhitePixel(xm.display, xm.screen),
+	)
+
+	windowContext.frameWindowHandle = frameWin
+	// adjascent for exposure
+	C.XSelectInput(xm.display, frameWin, C.ExposureMask|C.SubstructureNotifyMask|C.ButtonPressMask)
+
+	// reparent the window
+	C.XReparentWindow(xm.display, windowContext.windowHandle, frameWin, TitlebarWidth, 0)
+
+	return windowContext
+}
+func (xm *XWindowManager) ScanExistingWindows() {
+	var rootReturn, parentReturn C.Window
+	var children *C.Window
+	var nchildren C.uint
+
+	rootContext, _ := xm.xWindowContextManager.GetObject(xm.rootID)
+	status := C.XQueryTree(xm.display, rootContext.windowHandle, &rootReturn, &parentReturn, &children, &nchildren)
+
+	if status == 0 || nchildren == 0 {
+		return
 	}
-	rootWindow := C._DefaultRootWindow(tmpDisplay)
-	fmt.Printf("RootWindow::%d\n", rootWindow)
-	rootWindowContext := createXWindowContext(tmpDisplay, rootWindow)
-	ret.rootID = ret.xWindowContextManager.AddObject(rootWindowContext)
-	return ret, nil
+	defer C.XFree(unsafe.Pointer(children))
+
+	windowSlice := unsafe.Slice(children, int(nchildren))
+
+	for _, window := range windowSlice {
+		var attrs C.XWindowAttributes
+		C.XGetWindowAttributes(xm.display, window, &attrs)
+
+		if attrs.map_state == C.IsViewable && attrs.override_redirect == 0 {
+			newWindowContext := createXWindowContext(xm.display, window)
+			newWindowContext = xm.createFrameForWindow(newWindowContext)
+			xm.xWindowContextManager.AddObject(newWindowContext)
+			xm.frames[newWindowContext.frameWindowHandle] = newWindowContext.windowHandle
+			C.XMapWindow(xm.display, newWindowContext.frameWindowHandle)
+			C.XMapWindow(xm.display, newWindowContext.windowHandle)
+		}
+	}
+}
+func (xm *XWindowManager) GrabShortcuts() {
+	rootContext, _ := xm.xWindowContextManager.GetObject(xm.rootID)
+	rootWin := rootContext.windowHandle
+
+	keyCode := C.XKeysymToKeycode(xm.display, C.KeySym(C.XK_Return))
+
+	// mask for win key
+	modifier := C.uint(C.Mod4Mask)
+
+	// win + enter grub
+	C.XGrabKey(
+		xm.display,
+		C.int(keyCode),
+		modifier,
+		rootWin,
+		C.True, // owner_events
+		C.GrabModeAsync,
+		C.GrabModeAsync,
+	)
+
+	C.XFlush(xm.display)
+	fmt.Println("Hotkeys are registrated")
 }
 
 func (xm *XWindowManager) GrabKey(key uint64) int {
@@ -107,72 +195,181 @@ func (xm *XWindowManager) SelectInput(inputMask int64) {
 	C.XSelectInput(xm.display, rootCtx.windowHandle, C.long(inputMask))
 }
 
+func (xm *XWindowManager) Sync(discard bool) {
+	if discard {
+		C.XSync(xm.display, C.True)
+	} else {
+		C.XSync(xm.display, C.False)
+	}
+}
+
+func (xm *XWindowManager) Spawn(command string, args ...string) {
+	go func() {
+		cmd := exec.Command(command, args...)
+
+		cmd.Env = os.Environ()
+
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+
+		if err := cmd.Start(); err != nil {
+			fmt.Println("Error at run command:", command, "; error:", err)
+		}
+	}()
+}
+
 func (xm *XWindowManager) Start(ctx context.Context) {
 
 	go func() {
 		defer close(xm.loopDone)
-
+		xm.ScanExistingWindows()
+		xm.GrabShortcuts()
 		fmt.Println("XWindowManager: event loop run")
+
 		var ev C.XEvent
-		var start C.XButtonEvent
-		start.subwindow = C.None
-		var attr C.XWindowAttributes
 		for {
 			for C.XPending(xm.display) != 0 {
 				C.XNextEvent(xm.display, &ev)
 				evType := unionToInt(ev)
 				fmt.Println("XWindowManager:Event:", evType)
 				if evType == C.KeyPress {
-					fmt.Println("XWindowManager:Event:Key pressed:", unionToXKeyEvent(ev).keycode)
-					if unionToXKeyEvent(ev).subwindow != C.None {
-						C.XRaiseWindow(xm.display, unionToXKeyEvent(ev).subwindow)
+					xkeyEvent := unionToXKeyEvent(ev)
+					fmt.Println("XWindowManager:Event:Key pressed:", xkeyEvent.keycode)
+					if xkeyEvent.subwindow != C.None {
+						C.XRaiseWindow(xm.display, xkeyEvent.subwindow)
 					}
-					// } else if evType == C.MapNotify {
-					// 	fmt.Printf("Event: MapNotify\n")
-					// 	addWindow(xm.display, &(unionToXMapEvent(ev).window), &windowSlice)
-					// } else if evType == C.UnmapNotify {
-					// 	fmt.Printf("Event: UnmapNotify\n")
-					// 	removeWindow(&(unionToXMapEvent(ev).window), &windowSlice)
+					cleanModifiers := xkeyEvent.state &^ C.uint(C.Mod2Mask|C.LockMask)
+					targetCode := C.XKeysymToKeycode(xm.display, C.KeySym(C.XK_Return))
+					fmt.Println("Target code is ", targetCode)
+					if xkeyEvent.keycode == C.uint(targetCode) && cleanModifiers == C.uint(C.Mod4Mask) {
+						fmt.Println("Win + Enter! Running xterm...")
+						xm.Spawn("xterm")
+					}
+
+				} else if evType == C.ConfigureRequest {
+					fmt.Println("XWindowManager:Event:Configure request")
+					cr := unionToXConfigureRequestEvent(ev)
+					var changes C.XWindowChanges
+					changes.x = cr.x
+					changes.y = cr.y
+					changes.width = cr.width
+					changes.height = cr.height
+					changes.border_width = cr.border_width
+
+					C.XConfigureWindow(xm.display, cr.window, C.uint(cr.value_mask), &changes)
+				} else if evType == C.MapRequest {
+					fmt.Println("XWindowManager:Event:Map request")
+					mq := unionToXMapRequestEvent(ev)
+					newWindowContext := createXWindowContext(xm.display, mq.window)
+					newWindowContext = xm.createFrameForWindow(newWindowContext)
+					xm.xWindowContextManager.AddObject(newWindowContext)
+					xm.frames[newWindowContext.frameWindowHandle] = newWindowContext.windowHandle
+					C.XMapWindow(xm.display, newWindowContext.frameWindowHandle)
+					C.XMapWindow(xm.display, newWindowContext.windowHandle)
+					C.XFlush(xm.display)
+				} else if evType == C.Expose {
+					fmt.Println("XWindowManager:Event:expose")
+					ex := unionToXExposeEvent(ev)
+					frameWin := ex.window
+
+					clientWin, exists := xm.frames[frameWin]
+					if !exists {
+						continue
+					}
+					var rootReturn C.Window
+					var x, y C.int
+					var width, height, border C.uint
+					var depth C.uint
+					C.XGetGeometry(xm.display, C.Drawable(frameWin), &rootReturn, &x, &y, &width, &height, &border, &depth)
+
+					// create grafic context for drawing
+					gc := C.XCreateGC(xm.display, C.Drawable(frameWin), 0, nil)
+
+					// drawing rectable
+					// using color 0x3b82f6
+					C.XSetForeground(xm.display, gc, 0x3B82F6)
+					C.XFillRectangle(xm.display, C.Drawable(frameWin), gc, 0, 0, TitlebarWidth, height)
+
+					// get name of window and draw it
+					cName := C.get_window_name(xm.display, clientWin)
+					var title string = "Window"
+					if cName != nil {
+						title = C.GoString(cName)
+						C.free(unsafe.Pointer(cName))
+					}
+
+					// draw a text
+					C.XSetForeground(xm.display, gc, 0xFFFFFF)
+					startY := C.int(20)
+					charSpacing := C.int(14)
+					textX := C.int(6)
+
+					runes := []rune(title)
+
+					for i, r := range runes {
+						currentY := startY + C.int(i)*charSpacing
+
+						if currentY > C.int(height)-10 {
+							break
+						}
+
+						charStr := C.CString(string(r))
+						C.XDrawString(xm.display, C.Drawable(frameWin), gc, textX, currentY, charStr, 1)
+						C.free(unsafe.Pointer(charStr))
+					}
+
+					C.XFreeGC(xm.display, gc)
+
 				} else if evType == C.ButtonPress {
-					fmt.Println("XWindowManager:Event:Button pressed")
-					if unionToXButtonEvent(ev).subwindow != C.None {
-						C.XGetWindowAttributes(xm.display, unionToXButtonEvent(ev).subwindow, &attr)
-						start = *unionToXButtonEvent(ev)
+					fmt.Println("XWindowManager:Event: ButtonPress")
+					bp := (*C.XButtonEvent)(unsafe.Pointer(&ev))
+
+					if _, exists := xm.frames[bp.window]; exists {
+						if bp.x > TitlebarWidth {
+							fmt.Println("Client zone click, skip")
+							continue
+						}
+						xm.activeFrame = bp.window
+						xm.startMouseX = bp.x_root
+						xm.startMouseY = bp.y_root
+
+						C.XGetWindowAttributes(xm.display, xm.activeFrame, &xm.startAttr)
+
+						C.XGrabPointer(
+							xm.display,
+							bp.window,
+							C.False,
+							C.uint(C.PointerMotionMask|C.ButtonReleaseMask),
+							C.GrabModeAsync,
+							C.GrabModeAsync,
+							C.None,
+							C.None,
+							C.CurrentTime,
+						)
 					}
-				} else if evType == C.MotionNotify && start.subwindow != C.None {
-					fmt.Println("XWindowManager:Event:Motion notify")
-					xdiff := unionToXButtonEvent(ev).x_root - start.x_root
-					ydiff := unionToXButtonEvent(ev).y_root - start.y_root
+				} else if evType == C.MotionNotify {
+					fmt.Println("XWindowManager:Event: Motion Notify")
+					if xm.activeFrame != C.None {
+						mn := (*C.XMotionEvent)(unsafe.Pointer(&ev))
 
-					var toDiffX C.int
-					var toDiffY C.int
+						deltaX := mn.x_root - xm.startMouseX
+						deltaY := mn.y_root - xm.startMouseY
 
-					if start.button == 1 {
-						toDiffX = xdiff
-						toDiffY = ydiff
+						newX := xm.startAttr.x + deltaX
+						newY := xm.startAttr.y + deltaY
+
+						C.XMoveWindow(xm.display, xm.activeFrame, newX, newY)
+						C.XFlush(xm.display)
 					}
-
-					var toWidth C.int
-					var toHeight C.int
-
-					if start.button == 3 {
-						toWidth = xdiff
-						toHeight = ydiff
-					}
-
-					C.XMoveResizeWindow(
-						xm.display,
-						start.subwindow,
-						attr.x+toDiffX,
-						attr.y+toDiffY,
-						max(1, attr.width+toWidth),
-						max(1, attr.height+toHeight))
 				} else if evType == C.ButtonRelease {
-					fmt.Println("XWindowManager:Event:Button release")
-					start.subwindow = C.None
+					fmt.Println("XWindowManager:Event: ButtonRelease")
+					if xm.activeFrame != C.None {
+						C.XUngrabPointer(xm.display, C.CurrentTime)
+						xm.activeFrame = C.None
+						C.XFlush(xm.display)
+					}
 				}
 			}
-
 			if xm.isClosing.Load() {
 				fmt.Println("XWindowManager: event loop is interrupted")
 				return
