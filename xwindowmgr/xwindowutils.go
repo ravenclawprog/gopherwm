@@ -19,6 +19,18 @@ func unionToXKeyEvent(cbytes [192]byte) (result *C.XKeyEvent) {
 	return cast
 }
 
+func unionToXDestroyWindowEvent(cbytes [192]byte) (result *C.XDestroyWindowEvent) {
+	var addr *byte = &cbytes[0]
+	var cast *C.XDestroyWindowEvent = (*C.XDestroyWindowEvent)(unsafe.Pointer(addr))
+	return cast
+}
+
+func unionToXUnmapEvent(cbytes [192]byte) (result *C.XUnmapEvent) {
+	var addr *byte = &cbytes[0]
+	var cast *C.XUnmapEvent = (*C.XUnmapEvent)(unsafe.Pointer(addr))
+	return cast
+}
+
 func unionToXMapRequestEvent(cbytes [192]byte) (result *C.XMapRequestEvent) {
 	var addr *byte = &cbytes[0]
 	var cast *C.XMapRequestEvent = (*C.XMapRequestEvent)(unsafe.Pointer(addr))
@@ -46,6 +58,11 @@ func unionToXMapEvent(cbytes [192]byte) (result *C.XMapEvent) {
 func unionToXButtonEvent(cbytes [192]byte) (result *C.XButtonEvent) {
 	var addr *byte = &cbytes[0]
 	var cast *C.XButtonEvent = (*C.XButtonEvent)(unsafe.Pointer(addr))
+	return cast
+}
+func unionToXMotionEvent(cbytes [192]byte) (result *C.XMotionEvent) {
+	var addr *byte = &cbytes[0]
+	var cast *C.XMotionEvent = (*C.XMotionEvent)(unsafe.Pointer(addr))
 	return cast
 }
 

@@ -3,6 +3,7 @@
 #include <X11/Xlib.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 static inline Window _DefaultRootWindow(Display *display) {
     return DefaultRootWindow(display);
@@ -26,4 +27,19 @@ static inline char* get_window_name(Display *dpy, Window win) {
         return name;
     }
     return NULL;
+}
+
+static inline int XErrorHandlerImpl(Display *display, XErrorEvent *error) {
+    // Игнорируем BadWindow (код 3), BadMatch (код 8) и т.д., просто выводя в лог
+    if (error->error_code == BadWindow) {
+        fprintf(stderr, " Ignored BadWindow error (Serial: %lu)\n", error->serial);
+        return 0; 
+    }
+    fprintf(stderr, "X11 Error: code %d, request %d, minor %d\n",
+            error->error_code, error->request_code, error->minor_code);
+    return 0; // Возвращаем 0, чтобы программа НЕ завершалась
+}
+
+static inline void SetupErrorHandler() {
+    XSetErrorHandler(XErrorHandlerImpl);
 }

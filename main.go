@@ -25,9 +25,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	xManager.GrabKey(uint64(C.XK_F1))
-	xManager.SelectInput(int64(C.KeyPressMask | C.SubstructureRedirectMask))
-	xManager.Sync(false)
 	xManager.Start(ctx)
 
 	// wait till Done
