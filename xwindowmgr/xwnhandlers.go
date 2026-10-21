@@ -15,25 +15,26 @@ import (
 )
 
 func (xm *XWindowManager) handleMapRequest(evWindow C.Window, data *C.XMapRequestEvent) {
-	fmt.Println("XWM: Handling MapRequest for windown \"", evWindow, "\"")
+	fmt.Println("XWM: Handling MapRequest for window \"", evWindow, "\"")
 
 	clientContext, _ := xm.clientManager.FindByClient(evWindow)
 
 	if clientContext != nil && clientContext.Frame != C.None {
 		C.XMapWindow(xm.backend.display, clientContext.Frame)
-		C.XMapSubwindows(xm.backend.display, clientContext.Window)
+		C.XMapWindow(xm.backend.display, clientContext.Window)
 	} else {
 		newClient := generateClientContext(xm.backend, evWindow)
 		newClient.CreateFrame(xm.backend, xm.rootWindow)
+		fmt.Println("XWM: Handling MapRequest for window \"", evWindow, "\"; create frame window \"", newClient.Frame, "\"; Window Title:", newClient.Title)
 		xm.clientManager.Add(newClient)
 		C.XMapWindow(xm.backend.display, newClient.Frame)
-		C.XMapSubwindows(xm.backend.display, newClient.Window)
+		C.XMapWindow(xm.backend.display, newClient.Window)
 	}
 	xm.backend.Flush()
 }
 
 func (xm *XWindowManager) handleUnmapNotify(evWindow C.Window, data *C.XUnmapEvent) {
-	fmt.Println("XWM: Handling UnmapNotify for windown \"", evWindow, "\"")
+	fmt.Println("XWM: Handling UnmapNotify for window \"", evWindow, "\"")
 
 	var targetFrame C.Window = C.None
 	clientContext, err := xm.clientManager.FindByClient(evWindow)
@@ -43,26 +44,28 @@ func (xm *XWindowManager) handleUnmapNotify(evWindow C.Window, data *C.XUnmapEve
 	}
 	targetFrame = clientContext.Frame
 	if targetFrame != C.None {
-		C.XUnmapWindow(xm.backend.display, targetFrame)
+		C.XUnmapSubwindows(xm.backend.display, clientContext.Frame)
+		C.XUnmapWindow(xm.backend.display, clientContext.Frame)
 		xm.backend.Flush()
 	}
 }
 
 func (xm *XWindowManager) handleDestroyNotify(evWindow C.Window, data *C.XDestroyWindowEvent) {
-	fmt.Println("XWM: Handling Destroy Notify for windown \"", evWindow, "\"")
+	fmt.Println("XWM: Handling Destroy Notify for window \"", evWindow, "\"")
 	var targetFrame C.Window = C.None
 	clientContext, err := xm.clientManager.FindByClient(evWindow)
 	if err != nil {
-		fmt.Println("XWM: Handling UnmapNotify: cannot find clientWindow:", err.Error())
+		fmt.Println("XWM: Handling Destroy Notify: cannot find clientWindow:", err.Error())
 		return
 	}
 	targetFrame = clientContext.Frame
 	if targetFrame != C.None {
+		C.XUnmapSubwindows(xm.backend.display, targetFrame)
 		C.XUnmapWindow(xm.backend.display, targetFrame)
 		C.XDestroyWindow(xm.backend.display, targetFrame)
-		xm.clientManager.Remove(clientContext.Window)
-		xm.backend.Flush()
 	}
+	xm.clientManager.Remove(clientContext.Window)
+	xm.backend.Flush()
 }
 
 func (xm *XWindowManager) handleKeyPress(evWindow C.Window, data *C.XKeyEvent) {
@@ -75,12 +78,12 @@ func (xm *XWindowManager) handleKeyPress(evWindow C.Window, data *C.XKeyEvent) {
 	targetCode := C.XKeysymToKeycode(xm.backend.display, C.KeySym(C.XK_Return))
 	if data.keycode == C.uint(targetCode) && cleanModifiers == C.uint(C.Mod4Mask) {
 		fmt.Println("Win + Enter! Running xterm...")
-		// xm.Spawn("xterm")
+		Spawn("xterm")
 	}
 }
 
 func (xm *XWindowManager) handleConfigureRequest(evWindow C.Window, data *C.XConfigureRequestEvent) {
-	fmt.Println("XWM: Handling ConfigureRequest for windown \"", evWindow, "\"")
+	fmt.Println("XWM: Handling ConfigureRequest for window \"", evWindow, "\"")
 
 	var changes C.XWindowChanges
 	changes.x = data.x
@@ -88,28 +91,35 @@ func (xm *XWindowManager) handleConfigureRequest(evWindow C.Window, data *C.XCon
 	changes.width = data.width
 	changes.height = data.height
 	changes.border_width = data.border_width
+	changes.sibling = data.above
+	changes.stack_mode = data.detail
 
-	var associatedFrame C.Window = C.None
-	clientContext, err := xm.clientManager.FindByFrame(evWindow)
+	clientContext, err := xm.clientManager.FindByClient(evWindow)
 
-	if err != nil {
-		fmt.Println("Cannot find client window:", err.Error())
+	if err != nil || clientContext == nil || clientContext.Frame == C.None {
+		C.XConfigureWindow(xm.backend.display, evWindow, C.uint(data.value_mask), &changes)
+		xm.backend.Flush()
 		return
 	}
-	associatedFrame = clientContext.Frame
-	if associatedFrame != C.None {
-		changes.width = data.width + TitlebarWidth
-		C.XConfigureWindow(xm.backend.display, associatedFrame, C.uint(data.value_mask), &changes)
 
-		C.XResizeWindow(xm.backend.display, data.window, C.uint(data.width), C.uint(data.height))
-	} else {
-		C.XConfigureWindow(xm.backend.display, data.window, C.uint(data.value_mask), &changes)
-	}
+	changes.width = data.width + TitlebarWidth
+
+	C.XConfigureWindow(xm.backend.display, clientContext.Frame, C.uint(data.value_mask), &changes)
+
+	C.XMoveResizeWindow(
+		xm.backend.display,
+		clientContext.Window,
+		C.int(TitlebarWidth),
+		0,
+		C.uint(data.width),
+		C.uint(data.height),
+	)
+
 	xm.backend.Flush()
 }
 
 func (xm *XWindowManager) handleExpose(evWindow C.Window, data *C.XExposeEvent) {
-	fmt.Println("XWindowManager:Event:expose for windown \"", evWindow, "\"")
+	fmt.Println("XWindowManager:Event:expose for window \"", evWindow, "\"")
 
 	clientWin, err := xm.clientManager.FindByFrame(evWindow)
 	if err != nil {
@@ -132,21 +142,13 @@ func (xm *XWindowManager) handleExpose(evWindow C.Window, data *C.XExposeEvent) 
 	C.XSetForeground(xm.backend.display, gc, C.ulong(backgroundColor))
 	C.XFillRectangle(xm.backend.display, C.Drawable(evWindow), gc, 0, 0, TitlebarWidth, height)
 
-	// get name of window and draw it
-	cName := C.get_window_name(xm.backend.display, clientWin.Window)
-	var title string = "Window"
-	if cName != nil {
-		title = C.GoString(cName)
-		C.free(unsafe.Pointer(cName))
-	}
-
 	// draw a text
 	C.XSetForeground(xm.backend.display, gc, 0xFFFFFF)
 	startY := C.int(20)
 	charSpacing := C.int(12)
 	textX := C.int(6)
 
-	runes := []rune(title)
+	runes := []rune(clientWin.Title)
 
 	for i, r := range runes {
 		currentY := startY + C.int(i)*charSpacing

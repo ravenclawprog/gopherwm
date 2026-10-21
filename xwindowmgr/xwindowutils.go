@@ -5,7 +5,12 @@ package xwindowmgr
 #include <X11/Xlib.h>
 */
 import "C"
-import "unsafe"
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"unsafe"
+)
 
 func unionToInt(cbytes [192]byte) (result int) {
 	var addr *byte = &cbytes[0]
@@ -64,6 +69,21 @@ func unionToXMotionEvent(cbytes [192]byte) (result *C.XMotionEvent) {
 	var addr *byte = &cbytes[0]
 	var cast *C.XMotionEvent = (*C.XMotionEvent)(unsafe.Pointer(addr))
 	return cast
+}
+
+func Spawn(command string, args ...string) {
+	go func() {
+		cmd := exec.Command(command, args...)
+
+		cmd.Env = os.Environ()
+
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+
+		if err := cmd.Start(); err != nil {
+			fmt.Println("Error at run command:", command, "; error:", err)
+		}
+	}()
 }
 
 func max(a, b C.int) C.uint {

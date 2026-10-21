@@ -2,8 +2,10 @@ package xwindowmgr
 
 /*
 #include <X11/Xlib.h>
+#include "x11gohelper.hpp"
 */
 import "C"
+import "unsafe"
 
 const TitlebarWidth = 20
 
@@ -23,6 +25,7 @@ type MotionData struct {
 
 // Window controlled by WM
 type Client struct {
+	Title  string
 	Window C.Window   // Descriptor of window
 	Frame  C.Window   // Descriptor of window header - frame
 	Geom   WindowRect // Current geometry
@@ -61,6 +64,15 @@ func generateClientContext(backend *XBackend, window C.Window) *Client {
 		ret.Geom.Y = int(cY)
 		ret.Geom.Width = int(cWidth)
 		ret.Geom.Height = int(cHeight)
+
+		cName := C.get_window_name(backend.display, ret.Window)
+		if cName != nil {
+			ret.Title = C.GoString(cName)
+			C.free(unsafe.Pointer(cName))
+		} else {
+			ret.Title = "Window"
+		}
+
 		return &ret
 	}
 	return nil
