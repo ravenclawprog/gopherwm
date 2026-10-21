@@ -206,6 +206,7 @@ func (xm *XWindowManager) handleButtonRelease(evWindow C.Window, data *C.XButton
 		var lastX, lastY C.int
 		C.XTranslateCoordinates(xm.backend.display, evWindow, xm.rootWindow, 0, 0, &lastX, &lastY, &child)
 		C.XUngrabPointer(xm.backend.display, C.CurrentTime)
+		// update geometry - setting new X,Y positions
 		clientContext.Geom.X = int(lastX)
 		clientContext.Geom.Y = int(lastY)
 		xm.clientManager.SetMouseMovedClient(nil)
@@ -223,6 +224,7 @@ func (xm *XWindowManager) handleMotionEvent(evWindow C.Window, data *C.XMotionEv
 
 		newX := clientContext.Motion.StartAttr.x + deltaX
 		newY := clientContext.Motion.StartAttr.y + deltaY
+		// update velocity accordance to mouse event
 		clientContext.Motion.VelocityX = int(newX-C.int(clientContext.Geom.X)) % 7
 		clientContext.Motion.VelocityY = int(newY-C.int(clientContext.Geom.Y)) % 7
 		C.XMoveWindow(xm.backend.display, clientContext.Frame, newX, newY)
