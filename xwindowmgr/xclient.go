@@ -5,7 +5,10 @@ package xwindowmgr
 #include "x11gohelper.hpp"
 */
 import "C"
-import "unsafe"
+import (
+	"math/rand/v2"
+	"unsafe"
+)
 
 const TitlebarWidth = 20
 
@@ -21,6 +24,9 @@ type MotionData struct {
 	StartMouseX   C.int
 	StartMouseY   C.int
 	StartAttr     C.XWindowAttributes
+
+	VelocityX int
+	VelocityY int
 }
 
 // Window controlled by WM
@@ -37,34 +43,9 @@ func generateClientContext(backend *XBackend, window C.Window) *Client {
 	var ret Client
 	ret.Window = window
 
-	var (
-		outWindow      C.Window
-		outBorderWidth C.uint
-		outDepth       C.uint
-
-		cX      C.int
-		cY      C.int
-		cWidth  C.uint
-		cHeight C.uint
-	)
-
-	status := C.XGetGeometry(
-		backend.display,
-		ret.Window,
-		&outWindow,
-		&cX,
-		&cY,
-		&cWidth,
-		&cHeight,
-		&outBorderWidth,
-		&outDepth,
-	)
-	if status != 0 {
-		ret.Geom.X = int(cX)
-		ret.Geom.Y = int(cY)
-		ret.Geom.Width = int(cWidth)
-		ret.Geom.Height = int(cHeight)
-
+	geometry := backend.GetRect(ret.Window)
+	if geometry != nil {
+		ret.Geom = *geometry
 		cName := C.get_window_name(backend.display, ret.Window)
 		if cName != nil {
 			ret.Title = C.GoString(cName)
@@ -72,9 +53,11 @@ func generateClientContext(backend *XBackend, window C.Window) *Client {
 		} else {
 			ret.Title = "Window"
 		}
-
+		ret.Motion.VelocityX = rand.IntN(10) - 5
+		ret.Motion.VelocityY = rand.IntN(10) - 5
 		return &ret
 	}
+
 	return nil
 }
 

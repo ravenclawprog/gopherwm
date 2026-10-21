@@ -12,6 +12,7 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -19,9 +20,12 @@ type XWindowManager struct {
 	backend       *XBackend
 	clientManager *ClientManager
 	rootWindow    C.Window
+	rootGeom      WindowRect
 
 	eventChan chan WMEvent
 	loopDone  chan struct{}
+
+	startMoving atomic.Bool
 }
 
 func NewXWindowManager() (*XWindowManager, error) {
@@ -31,11 +35,13 @@ func NewXWindowManager() (*XWindowManager, error) {
 	}
 
 	rootWin := backend.GetRootWindow()
+	rootGeo := *backend.GetRect(rootWin)
 
 	return &XWindowManager{
 		backend:       backend,
 		clientManager: NewClientManager(),
 		rootWindow:    rootWin,
+		rootGeom:      rootGeo,
 		eventChan:     make(chan WMEvent, 200),
 		loopDone:      make(chan struct{}),
 	}, nil

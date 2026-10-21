@@ -31,6 +31,39 @@ func (b *XBackend) GetRootWindow() C.Window {
 	return C._DefaultRootWindow(b.display)
 }
 
+func (b *XBackend) GetRect(window C.Window) *WindowRect {
+	var (
+		outWindow      C.Window
+		outBorderWidth C.uint
+		outDepth       C.uint
+
+		cX      C.int
+		cY      C.int
+		cWidth  C.uint
+		cHeight C.uint
+	)
+	var ret *WindowRect = nil
+	status := C.XGetGeometry(
+		b.display,
+		window,
+		&outWindow,
+		&cX,
+		&cY,
+		&cWidth,
+		&cHeight,
+		&outBorderWidth,
+		&outDepth,
+	)
+	if status != 0 {
+		ret = &WindowRect{}
+		ret.X = int(cX)
+		ret.Y = int(cY)
+		ret.Width = int(cWidth)
+		ret.Height = int(cHeight)
+	}
+	return ret
+}
+
 func (b *XBackend) SelectInput(inputMask int64) {
 	C.XSelectInput(b.display, b.GetRootWindow(), C.long(inputMask))
 }

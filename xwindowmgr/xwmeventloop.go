@@ -33,8 +33,12 @@ func (xm *XWindowManager) EventLoop(ctx context.Context, eventChan chan<- WMEven
 				wmEv := xm.parseXEvent(evType, ev)
 				eventChan <- wmEv
 			} else {
-				time.Sleep(10 * time.Millisecond)
+				if xm.startMoving.Load() {
+					xm.MoveWindows()
+				}
+				time.Sleep(15 * time.Millisecond)
 			}
+
 		}
 	}
 }

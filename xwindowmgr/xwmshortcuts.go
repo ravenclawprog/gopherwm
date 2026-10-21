@@ -8,13 +8,14 @@ package xwindowmgr
 
 */
 import "C"
-import "fmt"
+import (
+	"fmt"
+)
 
 func (xm *XWindowManager) GrabShortcuts() {
 
 	keyCode := C.XKeysymToKeycode(xm.backend.display, C.KeySym(C.XK_Return))
 
-	// mask for win key
 	modifier := C.uint(C.Mod4Mask)
 
 	// win + enter grub
@@ -28,6 +29,20 @@ func (xm *XWindowManager) GrabShortcuts() {
 		C.GrabModeAsync,
 	)
 
+	keyCode = C.XKeysymToKeycode(xm.backend.display, C.XStringToKeysym(C.CString("m")))
+	if keyCode == 0 {
+		fmt.Println("XWM: Error: Cannot grub a keyCode  for \"m\"")
+		return
+	}
+	C.XGrabKey(
+		xm.backend.display,
+		C.int(keyCode),
+		modifier,
+		xm.rootWindow,
+		C.True, // owner_events: события приходят нашему приложению
+		C.GrabModeAsync,
+		C.GrabModeAsync,
+	)
 	xm.backend.Flush()
 	fmt.Println("XWM:Hotkeys are registrated")
 }

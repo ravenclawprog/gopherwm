@@ -80,6 +80,12 @@ func (xm *XWindowManager) handleKeyPress(evWindow C.Window, data *C.XKeyEvent) {
 		fmt.Println("Win + Enter! Running xterm...")
 		Spawn("xterm")
 	}
+	targetCode = C.XKeysymToKeycode(xm.backend.display, C.XStringToKeysym(C.CString("m")))
+	if data.keycode == C.uint(targetCode) && cleanModifiers == C.uint(C.Mod4Mask) {
+		fmt.Println("Win + m! Start moving windows!")
+		currentMovingState := xm.startMoving.Load()
+		xm.startMoving.Store(!currentMovingState)
+	}
 }
 
 func (xm *XWindowManager) handleConfigureRequest(evWindow C.Window, data *C.XConfigureRequestEvent) {
@@ -196,7 +202,12 @@ func (xm *XWindowManager) handleButtonPress(evWindow C.Window, data *C.XButtonEv
 func (xm *XWindowManager) handleButtonRelease(evWindow C.Window, data *C.XButtonEvent) {
 	fmt.Println("XWM: Handling ButtonRelease for window \"", evWindow, "\"")
 	if clientContext := xm.clientManager.GetMouseMovedClient(); clientContext != nil {
+		var child C.Window
+		var lastX, lastY C.int
+		C.XTranslateCoordinates(xm.backend.display, evWindow, xm.rootWindow, 0, 0, &lastX, &lastY, &child)
 		C.XUngrabPointer(xm.backend.display, C.CurrentTime)
+		clientContext.Geom.X = int(lastX)
+		clientContext.Geom.Y = int(lastY)
 		xm.clientManager.SetMouseMovedClient(nil)
 		xm.backend.Flush()
 	}
@@ -212,7 +223,8 @@ func (xm *XWindowManager) handleMotionEvent(evWindow C.Window, data *C.XMotionEv
 
 		newX := clientContext.Motion.StartAttr.x + deltaX
 		newY := clientContext.Motion.StartAttr.y + deltaY
-
+		clientContext.Motion.VelocityX = int(newX-C.int(clientContext.Geom.X)) % 7
+		clientContext.Motion.VelocityY = int(newY-C.int(clientContext.Geom.Y)) % 7
 		C.XMoveWindow(xm.backend.display, clientContext.Frame, newX, newY)
 		xm.backend.Flush()
 	}
