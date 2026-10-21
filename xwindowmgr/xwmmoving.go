@@ -4,10 +4,25 @@ package xwindowmgr
 #include <X11/Xlib.h>
 */
 import "C"
-import "fmt"
+import (
+	"context"
+	"time"
+)
 
-func (xm *XWindowManager) MoveWindows() {
-	fmt.Println("XWM: Moving windows")
+func (xm *XWindowManager) MovingWindowsLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(20 * time.Millisecond):
+			if xm.startMoving.Load() {
+				xm.moveWindows()
+			}
+		}
+	}
+}
+
+func (xm *XWindowManager) moveWindows() {
 	for _, client := range xm.clientManager.GetAllClients() {
 		if mouseMoveClient := xm.clientManager.GetMouseMovedClient(); mouseMoveClient == nil || client.Window != mouseMoveClient.Window {
 			var rect *WindowRect = &client.Geom

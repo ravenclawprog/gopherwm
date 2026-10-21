@@ -55,15 +55,8 @@ func (xm *XWindowManager) Start(ctx context.Context) {
 	xm.ScanExistingWindows()
 
 	go xm.EventLoop(ctx, xm.eventChan)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case event := <-xm.eventChan:
-			xm.handleWMEvent(event)
-		}
-	}
+	go xm.MovingWindowsLoop(ctx)
+	go xm.HandleWMEvent(ctx)
 }
 
 func (xm *XWindowManager) handleWMEvent(event WMEvent) {

@@ -20,10 +20,9 @@ type WindowRect struct {
 }
 
 type MotionData struct {
-	IsMouseMoving bool
-	StartMouseX   C.int
-	StartMouseY   C.int
-	StartAttr     C.XWindowAttributes
+	StartMouseX C.int
+	StartMouseY C.int
+	StartAttr   C.XWindowAttributes
 
 	VelocityX int
 	VelocityY int

@@ -96,13 +96,6 @@ func (cm *ClientManager) GetAllClients() []*Client {
 func (cm *ClientManager) SetMouseMovedClient(client *Client) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	if client != nil {
-		client.Motion.IsMouseMoving = true
-	} else {
-		if cm.mouseMovedWindow != nil {
-			cm.mouseMovedWindow.Motion.IsMouseMoving = false
-		}
-	}
 	cm.mouseMovedWindow = client
 	return
 }

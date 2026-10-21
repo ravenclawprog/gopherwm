@@ -141,6 +141,7 @@ func (xm *XWindowManager) handleExpose(evWindow C.Window, data *C.XExposeEvent) 
 
 	// create grafic context for drawing
 	gc := C.XCreateGC(xm.backend.display, C.Drawable(evWindow), 0, nil)
+	defer C.XFreeGC(xm.backend.display, gc)
 
 	// drawing rectable
 	// using color 0x3b82f6
@@ -168,7 +169,6 @@ func (xm *XWindowManager) handleExpose(evWindow C.Window, data *C.XExposeEvent) 
 		C.free(unsafe.Pointer(charStr))
 	}
 
-	C.XFreeGC(xm.backend.display, gc)
 }
 
 func (xm *XWindowManager) handleButtonPress(evWindow C.Window, data *C.XButtonEvent) {
@@ -216,9 +216,6 @@ func (xm *XWindowManager) handleButtonRelease(evWindow C.Window, data *C.XButton
 func (xm *XWindowManager) handleMotionEvent(evWindow C.Window, data *C.XMotionEvent) {
 	fmt.Println("XWM: Handling MotionEvent for window \"", evWindow, "\"")
 	if clientContext := xm.clientManager.GetMouseMovedClient(); clientContext != nil {
-		if clientContext.Motion.IsMouseMoving == false {
-			return
-		}
 		deltaX := data.x_root - clientContext.Motion.StartMouseX
 		deltaY := data.y_root - clientContext.Motion.StartMouseY
 
