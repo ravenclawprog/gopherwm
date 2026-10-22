@@ -48,7 +48,7 @@ func generateClientContext(backend *XBackend, window C.Window) *Client {
 		cName := C.get_window_name(backend.display, ret.Window)
 		if cName != nil {
 			ret.Title = C.GoString(cName)
-			C.free(unsafe.Pointer(cName))
+			C.XFree(unsafe.Pointer(cName))
 		} else {
 			ret.Title = "Window"
 		}

@@ -10,6 +10,7 @@ package xwindowmgr
 import "C"
 import (
 	"fmt"
+	"unsafe"
 )
 
 func (xm *XWindowManager) GrabShortcuts() {
@@ -28,8 +29,9 @@ func (xm *XWindowManager) GrabShortcuts() {
 		C.GrabModeAsync,
 		C.GrabModeAsync,
 	)
-
-	keyCode = C.XKeysymToKeycode(xm.backend.display, C.XStringToKeysym(C.CString("m")))
+	cStr := C.CString("m")
+	defer C.free(unsafe.Pointer(cStr))
+	keyCode = C.XKeysymToKeycode(xm.backend.display, C.XStringToKeysym(cStr))
 	if keyCode == 0 {
 		fmt.Println("XWM: Error: Cannot grub a keyCode  for \"m\"")
 		return

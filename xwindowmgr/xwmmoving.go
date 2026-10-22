@@ -38,6 +38,7 @@ func (xm *XWindowManager) moveWindows() {
 			}
 
 			C.XMoveWindow(xm.backend.display, client.Frame, C.int(rect.X), C.int(rect.Y))
+			xm.backend.Flush()
 		}
 	}
 }

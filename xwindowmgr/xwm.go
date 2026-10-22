@@ -5,8 +5,6 @@ package xwindowmgr
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 #include "x11gohelper.hpp"
-
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
 */
 import "C"
 import (
@@ -57,77 +55,6 @@ func (xm *XWindowManager) Start(ctx context.Context) {
 	go xm.EventLoop(ctx, xm.eventChan)
 	go xm.MovingWindowsLoop(ctx)
 	go xm.HandleWMEvent(ctx)
-}
-
-func (xm *XWindowManager) handleWMEvent(event WMEvent) {
-	switch event.Type {
-	case C.MapRequest:
-		data, ok := event.Data.(C.XMapRequestEvent)
-		if ok {
-			xm.handleMapRequest(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XMapRequest.")
-
-	case C.UnmapNotify:
-		data, ok := event.Data.(C.XUnmapEvent)
-		if ok {
-			xm.handleUnmapNotify(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XUnmapEvent.")
-	case C.KeyPress:
-		data, ok := event.Data.(C.XKeyEvent)
-		if ok {
-			xm.handleKeyPress(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XKeyEvent.")
-	case C.ConfigureRequest:
-		data, ok := event.Data.(C.XConfigureRequestEvent)
-		if ok {
-			xm.handleConfigureRequest(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XConfigureRequestEvent.")
-	case C.Expose:
-		data, ok := event.Data.(C.XExposeEvent)
-		if ok {
-			xm.handleExpose(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XExposeEvent.")
-	case C.ButtonPress:
-		data, ok := event.Data.(C.XButtonEvent)
-		if ok {
-			xm.handleButtonPress(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XButtonEvent(ButtonPress).")
-	case C.ButtonRelease:
-		data, ok := event.Data.(C.XButtonEvent)
-		if ok {
-			xm.handleButtonRelease(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XButtonEvent(ButtonRelease).")
-	case C.MotionNotify:
-		data, ok := event.Data.(C.XMotionEvent)
-		if ok {
-			xm.handleMotionEvent(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XExposeEvent.")
-	case C.DestroyNotify:
-		data, ok := event.Data.(C.XDestroyWindowEvent)
-		if ok {
-			xm.handleDestroyNotify(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XDestroyNotify.")
-	default:
-		fmt.Println("Unhandled message type:", event.Type)
-	}
 }
 
 func (xm *XWindowManager) ScanExistingWindows() {

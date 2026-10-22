@@ -80,7 +80,9 @@ func (xm *XWindowManager) handleKeyPress(evWindow C.Window, data *C.XKeyEvent) {
 		fmt.Println("Win + Enter! Running xterm...")
 		Spawn("xterm")
 	}
-	targetCode = C.XKeysymToKeycode(xm.backend.display, C.XStringToKeysym(C.CString("m")))
+	cStr := C.CString("m")
+	defer C.free(unsafe.Pointer(cStr))
+	targetCode = C.XKeysymToKeycode(xm.backend.display, C.XStringToKeysym(cStr))
 	if data.keycode == C.uint(targetCode) && cleanModifiers == C.uint(C.Mod4Mask) {
 		fmt.Println("Win + m! Start moving windows!")
 		currentMovingState := xm.startMoving.Load()
