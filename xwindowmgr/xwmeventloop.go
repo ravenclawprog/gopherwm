@@ -1,10 +1,8 @@
 package xwindowmgr
 
 /*
-#cgo LDFLAGS: -lX11
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
-#include "x11gohelper.hpp"
 
 */
 import "C"
@@ -20,14 +18,13 @@ type WMEvent struct {
 }
 
 func (xm *XWindowManager) EventLoop(ctx context.Context, eventChan chan<- WMEvent) {
-	var ev C.XEvent
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			if C.XPending(xm.backend.display) > 0 {
-				C.XNextEvent(xm.backend.display, &ev)
+			if xm.backend.Pending() > 0 {
+				ev := xm.backend.NextEvent()
 
 				evType := unionToInt(ev)
 				wmEv := xm.parseXEvent(evType, ev)

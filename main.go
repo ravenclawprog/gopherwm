@@ -1,11 +1,5 @@
 package main
 
-/*
-#cgo LDFLAGS: -lX11
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-*/
-import "C"
 import (
 	"context"
 	"fmt"

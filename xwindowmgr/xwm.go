@@ -1,17 +1,14 @@
 package xwindowmgr
 
 /*
-#cgo LDFLAGS: -lX11
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
-#include "x11gohelper.hpp"
 */
 import "C"
 import (
 	"context"
 	"fmt"
 	"sync/atomic"
-	"unsafe"
 )
 
 type XWindowManager struct {
@@ -58,30 +55,16 @@ func (xm *XWindowManager) Start(ctx context.Context) {
 }
 
 func (xm *XWindowManager) ScanExistingWindows() {
-	var rootReturn, parentReturn C.Window
-	var children *C.Window
-	var nchildren C.uint
-
-	status := C.XQueryTree(xm.backend.display, xm.rootWindow, &rootReturn, &parentReturn, &children, &nchildren)
-
-	if status == 0 || nchildren == 0 {
-		return
-	}
-	defer C.XFree(unsafe.Pointer(children))
-
-	windowSlice := unsafe.Slice(children, int(nchildren))
-
-	for _, window := range windowSlice {
-		var attrs C.XWindowAttributes
-		C.XGetWindowAttributes(xm.backend.display, window, &attrs)
+	for _, window := range xm.backend.QueryTree(xm.rootWindow) {
+		attrs := xm.backend.GetWindowAttributes(window)
 
 		if attrs.map_state == C.IsViewable && attrs.override_redirect == 0 {
 			client := generateClientContext(xm.backend, window)
 			client.CreateFrame(xm.backend, xm.rootWindow)
 			fmt.Println("XWM: adding exisiting window \"", client.Window, "\"; create frame window \"", client.Frame, "\"; Window Title:", client.Title)
 			xm.clientManager.Add(client)
-			C.XMapWindow(xm.backend.display, client.Frame)
-			C.XMapWindow(xm.backend.display, client.Window)
+			xm.backend.MapWindow(client.Frame)
+			xm.backend.MapWindow(client.Window)
 		}
 	}
 }

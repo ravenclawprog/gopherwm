@@ -1,18 +1,11 @@
 package xwindowmgr
 
 /*
-#cgo LDFLAGS: -lX11
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
-#include "x11gohelper.hpp"
-
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
 */
 import "C"
-import (
-	"fmt"
-	"unsafe"
-)
+import "fmt"
 
 func (xm *XWindowManager) handleMapRequest(evWindow C.Window, data *C.XMapRequestEvent) {
 	fmt.Println("XWM: Handling MapRequest for window \"", evWindow, "\"")
@@ -20,15 +13,15 @@ func (xm *XWindowManager) handleMapRequest(evWindow C.Window, data *C.XMapReques
 	clientContext, _ := xm.clientManager.FindByClient(evWindow)
 
 	if clientContext != nil && clientContext.Frame != C.None {
-		C.XMapWindow(xm.backend.display, clientContext.Frame)
-		C.XMapWindow(xm.backend.display, clientContext.Window)
+		xm.backend.MapWindow(clientContext.Frame)
+		xm.backend.MapWindow(clientContext.Window)
 	} else {
 		newClient := generateClientContext(xm.backend, evWindow)
 		newClient.CreateFrame(xm.backend, xm.rootWindow)
 		fmt.Println("XWM: Handling MapRequest for window \"", evWindow, "\"; create frame window \"", newClient.Frame, "\"; Window Title:", newClient.Title)
 		xm.clientManager.Add(newClient)
-		C.XMapWindow(xm.backend.display, newClient.Frame)
-		C.XMapWindow(xm.backend.display, newClient.Window)
+		xm.backend.MapWindow(newClient.Frame)
+		xm.backend.MapWindow(newClient.Window)
 	}
 	xm.backend.Flush()
 }
@@ -44,8 +37,8 @@ func (xm *XWindowManager) handleUnmapNotify(evWindow C.Window, data *C.XUnmapEve
 	}
 	targetFrame = clientContext.Frame
 	if targetFrame != C.None {
-		C.XUnmapSubwindows(xm.backend.display, clientContext.Frame)
-		C.XUnmapWindow(xm.backend.display, clientContext.Frame)
+		xm.backend.UnmapSubwindows(clientContext.Frame)
+		xm.backend.UnmapWindow(clientContext.Frame)
 		xm.backend.Flush()
 	}
 }
@@ -60,9 +53,9 @@ func (xm *XWindowManager) handleDestroyNotify(evWindow C.Window, data *C.XDestro
 	}
 	targetFrame = clientContext.Frame
 	if targetFrame != C.None {
-		C.XUnmapSubwindows(xm.backend.display, targetFrame)
-		C.XUnmapWindow(xm.backend.display, targetFrame)
-		C.XDestroyWindow(xm.backend.display, targetFrame)
+		xm.backend.UnmapSubwindows(targetFrame)
+		xm.backend.UnmapWindow(targetFrame)
+		xm.backend.DestroyWindow(targetFrame)
 	}
 	xm.clientManager.Remove(clientContext.Window)
 	xm.backend.Flush()
@@ -72,17 +65,15 @@ func (xm *XWindowManager) handleKeyPress(evWindow C.Window, data *C.XKeyEvent) {
 	fmt.Println("XWM: Handling KeyPress for window \"", evWindow, "\"")
 
 	if data.subwindow != C.None {
-		C.XRaiseWindow(xm.backend.display, data.subwindow)
+		xm.backend.RaiseWindow(data.subwindow)
 	}
 	cleanModifiers := data.state &^ C.uint(C.Mod2Mask|C.LockMask)
-	targetCode := C.XKeysymToKeycode(xm.backend.display, C.KeySym(C.XK_Return))
+	targetCode := xm.backend.KeysymToKeycode(C.KeySym(C.XK_Return))
 	if data.keycode == C.uint(targetCode) && cleanModifiers == C.uint(C.Mod4Mask) {
 		fmt.Println("Win + Enter! Running xterm...")
 		Spawn("xterm")
 	}
-	cStr := C.CString("m")
-	defer C.free(unsafe.Pointer(cStr))
-	targetCode = C.XKeysymToKeycode(xm.backend.display, C.XStringToKeysym(cStr))
+	targetCode = xm.backend.KeysymToKeycode(xm.backend.StringToKeysym("m"))
 	if data.keycode == C.uint(targetCode) && cleanModifiers == C.uint(C.Mod4Mask) {
 		fmt.Println("Win + m! Start moving windows!")
 		currentMovingState := xm.startMoving.Load()
@@ -105,17 +96,16 @@ func (xm *XWindowManager) handleConfigureRequest(evWindow C.Window, data *C.XCon
 	clientContext, err := xm.clientManager.FindByClient(evWindow)
 
 	if err != nil || clientContext == nil || clientContext.Frame == C.None {
-		C.XConfigureWindow(xm.backend.display, evWindow, C.uint(data.value_mask), &changes)
+		xm.backend.ConfigureWindow(evWindow, C.uint(data.value_mask), &changes)
 		xm.backend.Flush()
 		return
 	}
 
 	changes.width = data.width + TitlebarWidth
 
-	C.XConfigureWindow(xm.backend.display, clientContext.Frame, C.uint(data.value_mask), &changes)
+	xm.backend.ConfigureWindow(clientContext.Frame, C.uint(data.value_mask), &changes)
 
-	C.XMoveResizeWindow(
-		xm.backend.display,
+	xm.backend.MoveResizeWindow(
 		clientContext.Window,
 		C.int(TitlebarWidth),
 		0,
@@ -135,24 +125,22 @@ func (xm *XWindowManager) handleExpose(evWindow C.Window, data *C.XExposeEvent) 
 		return
 	}
 
-	var rootReturn C.Window
-	var x, y C.int
-	var width, height, border C.uint
-	var depth C.uint
-	C.XGetGeometry(xm.backend.display, C.Drawable(evWindow), &rootReturn, &x, &y, &width, &height, &border, &depth)
-
-	// create grafic context for drawing
-	gc := C.XCreateGC(xm.backend.display, C.Drawable(evWindow), 0, nil)
-	defer C.XFreeGC(xm.backend.display, gc)
+	rect := xm.backend.GetRect(evWindow)
+	if rect == nil {
+		return
+	}
+	height := C.uint(rect.Height)
+	gc := xm.backend.CreateGC(evWindow)
+	defer xm.backend.FreeGC(gc)
 
 	// drawing rectable
 	// using color 0x3b82f6
 	const backgroundColor uint64 = 0x3B82F6
-	C.XSetForeground(xm.backend.display, gc, C.ulong(backgroundColor))
-	C.XFillRectangle(xm.backend.display, C.Drawable(evWindow), gc, 0, 0, TitlebarWidth, height)
+	xm.backend.SetForeground(gc, backgroundColor)
+	xm.backend.FillRectangle(evWindow, gc, 0, 0, TitlebarWidth, height)
 
 	// draw a text
-	C.XSetForeground(xm.backend.display, gc, 0xFFFFFF)
+	xm.backend.SetForeground(gc, 0xFFFFFF)
 	startY := C.int(20)
 	charSpacing := C.int(12)
 	textX := C.int(6)
@@ -166,9 +154,7 @@ func (xm *XWindowManager) handleExpose(evWindow C.Window, data *C.XExposeEvent) 
 			break
 		}
 
-		charStr := C.CString(string(r))
-		C.XDrawString(xm.backend.display, C.Drawable(evWindow), gc, textX, currentY, charStr, 1)
-		C.free(unsafe.Pointer(charStr))
+		xm.backend.DrawString(evWindow, gc, textX, currentY, string(r), 1)
 	}
 
 }
@@ -184,30 +170,18 @@ func (xm *XWindowManager) handleButtonPress(evWindow C.Window, data *C.XButtonEv
 		clientContext.Motion.StartMouseX = data.x_root
 		clientContext.Motion.StartMouseY = data.y_root
 
-		C.XGetWindowAttributes(xm.backend.display, clientContext.Frame, &clientContext.Motion.StartAttr)
+		clientContext.Motion.StartAttr = xm.backend.GetWindowAttributes(clientContext.Frame)
 
 		xm.clientManager.SetMouseMovedClient(clientContext)
 
-		C.XGrabPointer(
-			xm.backend.display,
-			data.window,
-			C.False,
-			C.uint(C.PointerMotionMask|C.ButtonReleaseMask),
-			C.GrabModeAsync,
-			C.GrabModeAsync,
-			C.None,
-			C.None,
-			C.CurrentTime,
-		)
+		xm.backend.GrabPointer(data.window)
 	}
 }
 func (xm *XWindowManager) handleButtonRelease(evWindow C.Window, data *C.XButtonEvent) {
 	fmt.Println("XWM: Handling ButtonRelease for window \"", evWindow, "\"")
 	if clientContext := xm.clientManager.GetMouseMovedClient(); clientContext != nil {
-		var child C.Window
-		var lastX, lastY C.int
-		C.XTranslateCoordinates(xm.backend.display, evWindow, xm.rootWindow, 0, 0, &lastX, &lastY, &child)
-		C.XUngrabPointer(xm.backend.display, C.CurrentTime)
+		lastX, lastY := xm.backend.TranslateCoordinates(evWindow, xm.rootWindow, 0, 0)
+		xm.backend.UngrabPointer()
 		// update geometry - setting new X,Y positions
 		clientContext.Geom.X = int(lastX)
 		clientContext.Geom.Y = int(lastY)
@@ -226,7 +200,7 @@ func (xm *XWindowManager) handleMotionEvent(evWindow C.Window, data *C.XMotionEv
 		// update velocity accordance to mouse event
 		clientContext.Motion.VelocityX = int(newX-C.int(clientContext.Geom.X)) % 7
 		clientContext.Motion.VelocityY = int(newY-C.int(clientContext.Geom.Y)) % 7
-		C.XMoveWindow(xm.backend.display, clientContext.Frame, newX, newY)
+		xm.backend.MoveWindow(clientContext.Frame, newX, newY)
 		xm.backend.Flush()
 	}
 }

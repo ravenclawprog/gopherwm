@@ -2,13 +2,9 @@ package xwindowmgr
 
 /*
 #include <X11/Xlib.h>
-#include "x11gohelper.hpp"
 */
 import "C"
-import (
-	"math/rand/v2"
-	"unsafe"
-)
+import "math/rand/v2"
 
 const TitlebarWidth = 20
 
@@ -45,13 +41,7 @@ func generateClientContext(backend *XBackend, window C.Window) *Client {
 	geometry := backend.GetRect(ret.Window)
 	if geometry != nil {
 		ret.Geom = *geometry
-		cName := C.get_window_name(backend.display, ret.Window)
-		if cName != nil {
-			ret.Title = C.GoString(cName)
-			C.XFree(unsafe.Pointer(cName))
-		} else {
-			ret.Title = "Window"
-		}
+		ret.Title = backend.GetWindowName(ret.Window)
 		ret.Motion.VelocityX = rand.IntN(10) - 5
 		ret.Motion.VelocityY = rand.IntN(10) - 5
 		return &ret
@@ -63,16 +53,6 @@ func generateClientContext(backend *XBackend, window C.Window) *Client {
 func (cl *Client) CreateFrame(backend *XBackend, rootWin C.Window) {
 
 	frameWidth := cl.Geom.Width + TitlebarWidth
-	frameWin := C.XCreateSimpleWindow(
-		backend.display, rootWin,
-		C.int(cl.Geom.X), C.int(cl.Geom.Y), C.uint(frameWidth), C.uint(cl.Geom.Height),
-		1, C.XBlackPixel(backend.display, backend.screen), C.XWhitePixel(backend.display, backend.screen),
-	)
-
-	cl.Frame = frameWin
-	// adjascent for exposure
-	C.XSelectInput(backend.display, frameWin, C.ExposureMask|C.ButtonPressMask|C.SubstructureNotifyMask)
-
-	// reparent the window
-	C.XReparentWindow(backend.display, cl.Window, frameWin, TitlebarWidth, 0)
+	cl.Frame = backend.CreateFrame(rootWin, C.int(cl.Geom.X), C.int(cl.Geom.Y), C.int(frameWidth), C.int(cl.Geom.Height))
+	backend.Reparent(cl.Window, cl.Frame, TitlebarWidth, 0)
 }

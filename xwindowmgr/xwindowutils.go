@@ -1,7 +1,6 @@
 package xwindowmgr
 
 /*
-#cgo LDFLAGS: -lX11
 #include <X11/Xlib.h>
 */
 import "C"
@@ -84,12 +83,4 @@ func Spawn(command string, args ...string) {
 			fmt.Println("Error at run command:", command, "; error:", err)
 		}
 	}()
-}
-
-func max(a, b C.int) C.uint {
-	if a > b {
-		return C.uint(a)
-	}
-
-	return C.uint(b)
 }
