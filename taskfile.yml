@@ -31,6 +31,16 @@ tasks:
     cmds:
       - go test -v ./...
 
+  vet:
+    desc: "Run static analysis"
+    cmds:
+      - go vet ./...
+
+  test-race:
+    desc: "Run tests with the race detector"
+    cmds:
+      - go test -race -v ./...
+
   clean:
     desc: "Remove compiled files"
     cmds:

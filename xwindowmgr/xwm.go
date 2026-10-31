@@ -8,11 +8,12 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 )
 
 type XWindowManager struct {
-	backend       *XBackend
+	backend       Backend
 	clientManager *ClientManager
 	rootWindow    C.Window
 	rootGeom      WindowRect
@@ -21,6 +22,8 @@ type XWindowManager struct {
 	loopDone  chan struct{}
 
 	startMoving atomic.Bool
+	lifecycleMu sync.Mutex
+	started     bool
 }
 
 func NewXWindowManager() (*XWindowManager, error) {
@@ -29,29 +32,53 @@ func NewXWindowManager() (*XWindowManager, error) {
 		return nil, err
 	}
 
+	return NewXWindowManagerWithBackend(backend)
+}
+
+// NewXWindowManagerWithBackend initializes a manager without opening a display.
+// The supplied backend must be non-nil and remains owned by the caller.
+func NewXWindowManagerWithBackend(backend Backend) (*XWindowManager, error) {
+	if backend == nil {
+		return nil, fmt.Errorf("backend is required")
+	}
+
 	rootWin := backend.GetRootWindow()
-	rootGeo := *backend.GetRect(rootWin)
+	rootGeo := backend.GetRect(rootWin)
+	if rootGeo == nil {
+		return nil, fmt.Errorf("cannot get root window geometry")
+	}
 
 	return &XWindowManager{
 		backend:       backend,
 		clientManager: NewClientManager(),
 		rootWindow:    rootWin,
-		rootGeom:      rootGeo,
+		rootGeom:      *rootGeo,
 		eventChan:     make(chan WMEvent, 200),
 		loopDone:      make(chan struct{}),
 	}, nil
 }
 
+// Start initializes window management and starts workers once. A stopped manager
+// cannot be restarted; construct a new manager for another session.
 func (xm *XWindowManager) Start(ctx context.Context) {
+	xm.lifecycleMu.Lock()
+	defer xm.lifecycleMu.Unlock()
+	if xm.started {
+		return
+	}
+	xm.started = true
 
 	xm.GrabShortcuts()
 	xm.backend.Sync(false)
 	xm.backend.SelectInput(int64(C.KeyPressMask | C.SubstructureRedirectMask))
 	xm.ScanExistingWindows()
 
-	go xm.EventLoop(ctx, xm.eventChan)
-	go xm.MovingWindowsLoop(ctx)
-	go xm.HandleWMEvent(ctx)
+	var workers sync.WaitGroup
+	workers.Add(3)
+	go func() { defer workers.Done(); xm.EventLoop(ctx, xm.eventChan) }()
+	go func() { defer workers.Done(); xm.MovingWindowsLoop(ctx) }()
+	go func() { defer workers.Done(); xm.HandleWMEvent(ctx) }()
+	go func() { workers.Wait(); close(xm.loopDone) }()
 }
 
 func (xm *XWindowManager) ScanExistingWindows() {
@@ -68,3 +95,6 @@ func (xm *XWindowManager) ScanExistingWindows() {
 		}
 	}
 }
+
+// Wait blocks until all workers finish. Call it after Start.
+func (xm *XWindowManager) Wait() { <-xm.loopDone }

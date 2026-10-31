@@ -34,7 +34,7 @@ type Client struct {
 	Motion MotionData
 }
 
-func generateClientContext(backend *XBackend, window C.Window) *Client {
+func generateClientContext(backend Backend, window C.Window) *Client {
 	var ret Client
 	ret.Window = window
 
@@ -50,7 +50,7 @@ func generateClientContext(backend *XBackend, window C.Window) *Client {
 	return nil
 }
 
-func (cl *Client) CreateFrame(backend *XBackend, rootWin C.Window) {
+func (cl *Client) CreateFrame(backend Backend, rootWin C.Window) {
 
 	frameWidth := cl.Geom.Width + TitlebarWidth
 	cl.Frame = backend.CreateFrame(rootWin, C.int(cl.Geom.X), C.int(cl.Geom.Y), C.int(frameWidth), C.int(cl.Geom.Height))

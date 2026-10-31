@@ -1,38 +1,51 @@
 package xwindowmgr
 
-/*
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-
-*/
-import "C"
 import (
 	"context"
 	"time"
 )
 
-type WMEvent struct {
-	Type   int
-	Window C.Window
-	Data   interface{}
+// EventSource supplies decoded events. NextEvent is called only when Pending is positive.
+// The event loop must be the sole consumer of the source.
+type EventSource interface {
+	Pending() int
+	NextEvent() WMEvent
 }
 
+var _ EventSource = (*XBackend)(nil)
+
+const eventPollInterval = 15 * time.Millisecond
+
 func (xm *XWindowManager) EventLoop(ctx context.Context, eventChan chan<- WMEvent) {
+
 	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
-			if xm.backend.Pending() > 0 {
-				ev := xm.backend.NextEvent()
-
-				evType := unionToInt(ev)
-				wmEv := xm.parseXEvent(evType, ev)
-				eventChan <- wmEv
-			} else {
-				time.Sleep(15 * time.Millisecond)
-			}
-
 		}
+		if xm.backend.Pending() == 0 {
+			timer := time.NewTimer(eventPollInterval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			continue
+		}
+
+		event := xm.backend.NextEvent()
+		if !sendWMEvent(ctx, eventChan, event) {
+			return
+		}
+	}
+}
+
+// sendWMEvent keeps a full event queue from blocking shutdown.
+func sendWMEvent(ctx context.Context, events chan<- WMEvent, event WMEvent) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case events <- event:
+		return true
 	}
 }

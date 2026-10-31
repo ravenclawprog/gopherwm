@@ -9,74 +9,38 @@ import (
 	"fmt"
 )
 
-func (xm *XWindowManager) handleWMEvent(event WMEvent) {
+// dispatchEvent checks the payload before invoking the matching window handler.
+func dispatchEvent[T any](event WMEvent, handler func(C.Window, *T)) error {
+	data, ok := event.Data.(T)
+	if !ok {
+		return fmt.Errorf("event %d: expected payload %T, got %T", event.Type, *new(T), event.Data)
+	}
+	handler(event.Window, &data)
+	return nil
+}
+
+func (xm *XWindowManager) handleWMEvent(event WMEvent) error {
 	switch event.Type {
 	case C.MapRequest:
-		data, ok := event.Data.(C.XMapRequestEvent)
-		if ok {
-			xm.handleMapRequest(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XMapRequest.")
-
+		return dispatchEvent(event, xm.handleMapRequest)
 	case C.UnmapNotify:
-		data, ok := event.Data.(C.XUnmapEvent)
-		if ok {
-			xm.handleUnmapNotify(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XUnmapEvent.")
+		return dispatchEvent(event, xm.handleUnmapNotify)
 	case C.KeyPress:
-		data, ok := event.Data.(C.XKeyEvent)
-		if ok {
-			xm.handleKeyPress(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XKeyEvent.")
+		return dispatchEvent(event, xm.handleKeyPress)
 	case C.ConfigureRequest:
-		data, ok := event.Data.(C.XConfigureRequestEvent)
-		if ok {
-			xm.handleConfigureRequest(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XConfigureRequestEvent.")
+		return dispatchEvent(event, xm.handleConfigureRequest)
 	case C.Expose:
-		data, ok := event.Data.(C.XExposeEvent)
-		if ok {
-			xm.handleExpose(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XExposeEvent.")
+		return dispatchEvent(event, xm.handleExpose)
 	case C.ButtonPress:
-		data, ok := event.Data.(C.XButtonEvent)
-		if ok {
-			xm.handleButtonPress(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XButtonEvent(ButtonPress).")
+		return dispatchEvent(event, xm.handleButtonPress)
 	case C.ButtonRelease:
-		data, ok := event.Data.(C.XButtonEvent)
-		if ok {
-			xm.handleButtonRelease(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XButtonEvent(ButtonRelease).")
+		return dispatchEvent(event, xm.handleButtonRelease)
 	case C.MotionNotify:
-		data, ok := event.Data.(C.XMotionEvent)
-		if ok {
-			xm.handleMotionEvent(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XMotionEvent.")
+		return dispatchEvent(event, xm.handleMotionEvent)
 	case C.DestroyNotify:
-		data, ok := event.Data.(C.XDestroyWindowEvent)
-		if ok {
-			xm.handleDestroyNotify(event.Window, &data)
-			return
-		}
-		fmt.Println("Cannot convert data XDestroyNotify.")
+		return dispatchEvent(event, xm.handleDestroyNotify)
 	default:
-		fmt.Println("Unhandled message type:", event.Type)
+		return fmt.Errorf("unhandled event type: %d", event.Type)
 	}
 }
 
@@ -86,57 +50,13 @@ func (xm *XWindowManager) HandleWMEvent(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case event := <-xm.eventChan:
-			xm.handleWMEvent(event)
+		case event, ok := <-xm.eventChan:
+			if !ok {
+				return
+			}
+			if err := xm.handleWMEvent(event); err != nil {
+				fmt.Println("XWM:", err)
+			}
 		}
 	}
-}
-
-func (xm *XWindowManager) parseXEvent(evType int, ev C.XEvent) WMEvent {
-	var wmEv WMEvent
-	wmEv.Type = evType
-	switch evType {
-	case C.MapRequest:
-		mq := unionToXMapRequestEvent(ev)
-		wmEv.Window = mq.window
-		wmEv.Data = *mq
-
-	case C.UnmapNotify:
-		unmap := unionToXUnmapEvent(ev)
-		wmEv.Window = unmap.window
-		wmEv.Data = *unmap
-
-	case C.DestroyNotify:
-		destroy := unionToXDestroyWindowEvent(ev)
-		wmEv.Window = destroy.window
-		wmEv.Data = *destroy
-
-	case C.ConfigureRequest:
-		cr := unionToXConfigureRequestEvent(ev)
-		wmEv.Window = cr.window
-		wmEv.Data = *cr
-
-	case C.KeyPress:
-		kp := unionToXKeyEvent(ev)
-		wmEv.Window = kp.window
-		wmEv.Data = *kp
-	case C.Expose:
-		ee := unionToXExposeEvent(ev)
-		wmEv.Window = ee.window
-		wmEv.Data = *ee
-	case C.ButtonPress:
-		bp := unionToXButtonEvent(ev)
-		wmEv.Window = bp.window
-		wmEv.Data = *bp
-	case C.ButtonRelease:
-		br := unionToXButtonEvent(ev)
-		wmEv.Window = br.window
-		wmEv.Data = *br
-	case C.MotionNotify:
-		me := unionToXMotionEvent(ev)
-		wmEv.Window = me.window
-		wmEv.Data = *me
-	}
-
-	return wmEv
 }

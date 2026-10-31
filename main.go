@@ -23,4 +23,5 @@ func main() {
 
 	// wait till Done
 	<-ctx.Done()
+	xManager.Wait()
 }

@@ -11,6 +11,27 @@ import (
 	"unsafe"
 )
 
+// These aliases expose backend signatures without requiring callers to import C.
+// They retain Xlib's representation; replacing it with Go-owned types is separate work.
+type WindowID = C.Window
+type Coordinate = C.int
+type Dimension = C.uint
+type WindowAttributes = C.XWindowAttributes
+type WindowChanges = C.XWindowChanges
+type KeySym = C.KeySym
+type KeyCode = C.KeyCode
+type GraphicsContext = C.GC
+
+type MapRequestEvent = C.XMapRequestEvent
+type UnmapEvent = C.XUnmapEvent
+type DestroyWindowEvent = C.XDestroyWindowEvent
+
+const (
+	MapRequest    = C.MapRequest
+	UnmapNotify   = C.UnmapNotify
+	DestroyNotify = C.DestroyNotify
+)
+
 type XBackend struct {
 	display *C.Display
 	screen  C.int
@@ -145,10 +166,10 @@ func (b *XBackend) ConfigureWindow(window C.Window, mask C.uint, changes *C.XWin
 }
 
 func (b *XBackend) Pending() int { return int(C.XPending(b.display)) }
-func (b *XBackend) NextEvent() C.XEvent {
+func (b *XBackend) NextEvent() WMEvent {
 	var event C.XEvent
 	C.XNextEvent(b.display, &event)
-	return event
+	return parseXEvent(event)
 }
 
 func (b *XBackend) KeysymToKeycode(keysym C.KeySym) C.KeyCode {
