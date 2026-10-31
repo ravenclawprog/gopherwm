@@ -11,21 +11,29 @@ import (
 )
 
 type command struct {
-	name   string
-	window wm.WindowID
-	frame  wm.WindowID
-	rect   wm.WindowRect
+	name    string
+	window  wm.WindowID
+	frame   wm.WindowID
+	rect    wm.WindowRect
+	mask    wm.ConfigureMask
+	changes wm.WindowChanges
+	context wm.GraphicsContext
+	color   uint64
+	text    string
+	length  int
 }
 
 // fakeBackend models windows and records commands at the public backend boundary.
 // An unexpected operation fails loudly rather than silently succeeding.
 type fakeBackend struct {
-	read      chan struct{}
-	mu        sync.Mutex
-	events    chan wm.WMEvent
-	commands  chan command
-	rects     map[wm.WindowID]wm.WindowRect
-	nextFrame wm.WindowID
+	read       chan struct{}
+	mu         sync.Mutex
+	events     chan wm.WMEvent
+	commands   chan command
+	rects      map[wm.WindowID]wm.WindowRect
+	nextFrame  wm.WindowID
+	children   []wm.WindowID
+	attributes map[wm.WindowID]wm.WindowAttributes
 }
 
 var _ wm.Backend = (*fakeBackend)(nil)
@@ -55,15 +63,19 @@ func (b *fakeBackend) NextEvent() wm.WMEvent {
 	b.read <- struct{}{}
 	return event
 }
-func (b *fakeBackend) SelectInput(int64)                                {}
-func (b *fakeBackend) Sync(bool)                                        {}
-func (b *fakeBackend) Flush()                                           {}
-func (b *fakeBackend) QueryTree(wm.WindowID) []wm.WindowID              { return nil }
+func (b *fakeBackend) SelectInput(wm.EventMask) {}
+func (b *fakeBackend) Sync(bool)                {}
+func (b *fakeBackend) Flush()                   {}
+func (b *fakeBackend) QueryTree(wm.WindowID) []wm.WindowID {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]wm.WindowID(nil), b.children...)
+}
 func (b *fakeBackend) GetWindowName(wm.WindowID) string                 { return "Test window" }
 func (b *fakeBackend) KeysymToKeycode(wm.KeySym) wm.KeyCode             { return 1 }
 func (b *fakeBackend) StringToKeysym(string) wm.KeySym                  { return 1 }
-func (b *fakeBackend) GrabKey(wm.WindowID, wm.Coordinate, wm.Dimension) {}
-func (b *fakeBackend) CreateFrame(parent wm.WindowID, x, y, w, h wm.Coordinate) wm.WindowID {
+func (b *fakeBackend) GrabKey(wm.WindowID, wm.KeyCode, wm.ModifierMask) {}
+func (b *fakeBackend) CreateFrame(parent wm.WindowID, x, y, w, h int) wm.WindowID {
 	b.mu.Lock()
 	frame := b.nextFrame
 	b.nextFrame++
@@ -73,7 +85,7 @@ func (b *fakeBackend) CreateFrame(parent wm.WindowID, x, y, w, h wm.Coordinate) 
 	b.commands <- command{name: "create", window: parent, frame: frame, rect: rect}
 	return frame
 }
-func (b *fakeBackend) Reparent(window, frame wm.WindowID, x, y wm.Coordinate) {
+func (b *fakeBackend) Reparent(window, frame wm.WindowID, x, y int) {
 	b.commands <- command{name: "reparent", window: window, frame: frame, rect: wm.WindowRect{X: int(x), Y: int(y)}}
 }
 func (b *fakeBackend) MapWindow(window wm.WindowID) {
@@ -91,32 +103,55 @@ func (b *fakeBackend) DestroyWindow(window wm.WindowID) {
 	b.mu.Unlock()
 	b.commands <- command{name: "destroy", window: window}
 }
-func (b *fakeBackend) GetWindowAttributes(wm.WindowID) wm.WindowAttributes {
-	panic("unexpected GetWindowAttributes")
+func (b *fakeBackend) GetWindowAttributes(window wm.WindowID) wm.WindowAttributes {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if attrs, ok := b.attributes[window]; ok {
+		return attrs
+	}
+	rect := b.rects[window]
+	return wm.WindowAttributes{X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height, MapState: wm.IsViewable}
 }
 func (b *fakeBackend) RaiseWindow(wm.WindowID) { panic("unexpected RaiseWindow") }
-func (b *fakeBackend) MoveWindow(wm.WindowID, wm.Coordinate, wm.Coordinate) {
-	panic("unexpected MoveWindow")
+func (b *fakeBackend) MoveWindow(window wm.WindowID, x, y int) {
+	b.mu.Lock()
+	rect := b.rects[window]
+	rect.X, rect.Y = x, y
+	b.rects[window] = rect
+	b.mu.Unlock()
+	b.commands <- command{name: "move", window: window, rect: wm.WindowRect{X: x, Y: y}}
 }
-func (b *fakeBackend) MoveResizeWindow(wm.WindowID, wm.Coordinate, wm.Coordinate, wm.Dimension, wm.Dimension) {
-	panic("unexpected MoveResizeWindow")
+func (b *fakeBackend) MoveResizeWindow(window wm.WindowID, x, y int, width, height uint) {
+	b.commands <- command{name: "moveResize", window: window, rect: wm.WindowRect{X: x, Y: y, Width: int(width), Height: int(height)}}
 }
-func (b *fakeBackend) ConfigureWindow(wm.WindowID, wm.Dimension, *wm.WindowChanges) {
-	panic("unexpected ConfigureWindow")
+func (b *fakeBackend) ConfigureWindow(window wm.WindowID, mask wm.ConfigureMask, changes *wm.WindowChanges) {
+	b.commands <- command{name: "configure", window: window, mask: mask, changes: *changes}
 }
-func (b *fakeBackend) GrabPointer(wm.WindowID) { panic("unexpected GrabPointer") }
-func (b *fakeBackend) UngrabPointer()          { panic("unexpected UngrabPointer") }
-func (b *fakeBackend) TranslateCoordinates(wm.WindowID, wm.WindowID, wm.Coordinate, wm.Coordinate) (wm.Coordinate, wm.Coordinate) {
-	panic("unexpected TranslateCoordinates")
+func (b *fakeBackend) GrabPointer(window wm.WindowID) {
+	b.commands <- command{name: "grabPointer", window: window}
 }
-func (b *fakeBackend) CreateGC(wm.WindowID) wm.GraphicsContext  { panic("unexpected CreateGC") }
-func (b *fakeBackend) FreeGC(wm.GraphicsContext)                { panic("unexpected FreeGC") }
-func (b *fakeBackend) SetForeground(wm.GraphicsContext, uint64) { panic("unexpected SetForeground") }
-func (b *fakeBackend) FillRectangle(wm.WindowID, wm.GraphicsContext, wm.Coordinate, wm.Coordinate, wm.Dimension, wm.Dimension) {
-	panic("unexpected FillRectangle")
+func (b *fakeBackend) UngrabPointer() { b.commands <- command{name: "ungrabPointer"} }
+func (b *fakeBackend) TranslateCoordinates(source, destination wm.WindowID, x, y int) (int, int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	rect := b.rects[source]
+	return rect.X + x, rect.Y + y
 }
-func (b *fakeBackend) DrawString(wm.WindowID, wm.GraphicsContext, wm.Coordinate, wm.Coordinate, string, int) {
-	panic("unexpected DrawString")
+func (b *fakeBackend) CreateGC(window wm.WindowID) wm.GraphicsContext {
+	b.commands <- command{name: "createGC", window: window, context: 1}
+	return 1
+}
+func (b *fakeBackend) FreeGC(gc wm.GraphicsContext) {
+	b.commands <- command{name: "freeGC", context: gc}
+}
+func (b *fakeBackend) SetForeground(gc wm.GraphicsContext, color uint64) {
+	b.commands <- command{name: "foreground", context: gc, color: color}
+}
+func (b *fakeBackend) FillRectangle(window wm.WindowID, gc wm.GraphicsContext, x, y int, width, height uint) {
+	b.commands <- command{name: "fill", window: window, context: gc, rect: wm.WindowRect{X: x, Y: y, Width: int(width), Height: int(height)}}
+}
+func (b *fakeBackend) DrawString(window wm.WindowID, gc wm.GraphicsContext, x, y int, text string, length int) {
+	b.commands <- command{name: "text", window: window, context: gc, rect: wm.WindowRect{X: x, Y: y}, text: text, length: length}
 }
 
 func newManager(t *testing.T, backend wm.Backend) *wm.XWindowManager {
@@ -261,5 +296,56 @@ func TestXWindowManagerEventLoopStopsWithFullQueue(t *testing.T) {
 	awaitDone(t, done)
 	if event := <-output; event.Type != 1 {
 		t.Fatalf("existing queued event changed: %+v", event)
+	}
+}
+
+func TestXWindowManagerConfigureRequests(t *testing.T) {
+	backend := newFakeBackend()
+	startManager(t, backend)
+	openWindow(t, backend, 100)
+	mask := wm.CWX | wm.CWY | wm.CWWidth | wm.CWHeight | wm.CWBorderWidth | wm.CWSibling | wm.CWStackMode
+	data := wm.ConfigureRequestEvent{X: -15, Y: 30, Width: 500, Height: 400, BorderWidth: 2, Above: 77, Detail: 1, ValueMask: mask}
+	changes := wm.WindowChanges{X: -15, Y: 30, Width: 520, Height: 400, BorderWidth: 2, Sibling: 77, StackMode: 1}
+	backend.events <- wm.WMEvent{Type: wm.ConfigureRequest, Window: 42, Data: data}
+	expectCommands(t, backend,
+		command{name: "configure", window: 100, mask: mask, changes: changes},
+		command{name: "moveResize", window: 42, rect: wm.WindowRect{X: 20, Width: 500, Height: 400}},
+	)
+	// Unmanaged windows receive the application's changes without frame offsets.
+	changes.Width = 500
+	backend.events <- wm.WMEvent{Type: wm.ConfigureRequest, Window: 43, Data: data}
+	expectCommands(t, backend, command{name: "configure", window: 43, mask: mask, changes: changes})
+}
+
+func TestXWindowManagerDragUsesSignedCoordinates(t *testing.T) {
+	backend := newFakeBackend()
+	startManager(t, backend)
+	openWindow(t, backend, 100)
+	backend.events <- wm.WMEvent{Type: wm.ButtonPress, Window: 100, Data: wm.ButtonEvent{X: 5, XRoot: 40, YRoot: 60, Button: 1}}
+	expectCommands(t, backend, command{name: "grabPointer", window: 100})
+	backend.events <- wm.WMEvent{Type: wm.MotionNotify, Window: 100, Data: wm.MotionEvent{XRoot: 0, YRoot: 10}}
+	expectCommands(t, backend, command{name: "move", window: 100, rect: wm.WindowRect{X: -30, Y: -30}})
+	backend.events <- wm.WMEvent{Type: wm.ButtonRelease, Window: 100, Data: wm.ButtonEvent{Button: 1}}
+	expectCommands(t, backend, command{name: "ungrabPointer"})
+}
+
+func TestXWindowManagerScansOnlyManagedVisibleWindows(t *testing.T) {
+	backend := newFakeBackend()
+	backend.children = []wm.WindowID{42, 43, 44}
+	backend.attributes = map[wm.WindowID]wm.WindowAttributes{
+		42: {MapState: wm.IsViewable},
+		43: {MapState: wm.IsViewable, OverrideRedirect: true},
+		44: {MapState: wm.IsUnmapped},
+	}
+	manager, cancel := startManager(t, backend)
+	expectCommands(t, backend,
+		command{name: "create", window: 1, frame: 100, rect: wm.WindowRect{X: 10, Y: 20, Width: 320, Height: 200}},
+		command{name: "reparent", window: 42, frame: 100, rect: wm.WindowRect{X: 20}},
+		command{name: "map", window: 100}, command{name: "map", window: 42},
+	)
+	cancel()
+	waitManager(t, manager)
+	if len(backend.commands) != 0 {
+		t.Fatal("unexpected commands for hidden or override-redirect windows")
 	}
 }

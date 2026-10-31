@@ -1,10 +1,5 @@
 package xwindowmgr
 
-/*
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-*/
-import "C"
 import (
 	"context"
 	"fmt"
@@ -15,15 +10,14 @@ import (
 type XWindowManager struct {
 	backend       Backend
 	clientManager *ClientManager
-	rootWindow    C.Window
+	rootWindow    WindowID
 	rootGeom      WindowRect
 
 	eventChan chan WMEvent
 	loopDone  chan struct{}
 
 	startMoving atomic.Bool
-	lifecycleMu sync.Mutex
-	started     bool
+	started     atomic.Bool
 }
 
 func NewXWindowManager() (*XWindowManager, error) {
@@ -60,17 +54,15 @@ func NewXWindowManagerWithBackend(backend Backend) (*XWindowManager, error) {
 
 // Start initializes window management and starts workers once. A stopped manager
 // cannot be restarted; construct a new manager for another session.
+// Repeated calls return immediately, even while initialization is still running.
 func (xm *XWindowManager) Start(ctx context.Context) {
-	xm.lifecycleMu.Lock()
-	defer xm.lifecycleMu.Unlock()
-	if xm.started {
+	if !xm.started.CompareAndSwap(false, true) {
 		return
 	}
-	xm.started = true
 
 	xm.GrabShortcuts()
 	xm.backend.Sync(false)
-	xm.backend.SelectInput(int64(C.KeyPressMask | C.SubstructureRedirectMask))
+	xm.backend.SelectInput(KeyPressMask | SubstructureRedirectMask)
 	xm.ScanExistingWindows()
 
 	var workers sync.WaitGroup
@@ -85,7 +77,7 @@ func (xm *XWindowManager) ScanExistingWindows() {
 	for _, window := range xm.backend.QueryTree(xm.rootWindow) {
 		attrs := xm.backend.GetWindowAttributes(window)
 
-		if attrs.map_state == C.IsViewable && attrs.override_redirect == 0 {
+		if attrs.MapState == IsViewable && !attrs.OverrideRedirect {
 			client := generateClientContext(xm.backend, window)
 			client.CreateFrame(xm.backend, xm.rootWindow)
 			fmt.Println("XWM: adding exisiting window \"", client.Window, "\"; create frame window \"", client.Frame, "\"; Window Title:", client.Title)

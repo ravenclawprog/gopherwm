@@ -3,128 +3,126 @@ package xwindowmgr
 /*
 #cgo LDFLAGS: -lX11
 #include <X11/Xlib.h>
+#include <X11/keysym.h>
 #include "x11gohelper.hpp"
 */
 import "C"
 import (
 	"errors"
+	"sync"
 	"unsafe"
 )
 
-// These aliases expose backend signatures without requiring callers to import C.
-// They retain Xlib's representation; replacing it with Go-owned types is separate work.
-type WindowID = C.Window
-type Coordinate = C.int
-type Dimension = C.uint
-type WindowAttributes = C.XWindowAttributes
-type WindowChanges = C.XWindowChanges
-type KeySym = C.KeySym
-type KeyCode = C.KeyCode
-type GraphicsContext = C.GC
-
-type MapRequestEvent = C.XMapRequestEvent
-type UnmapEvent = C.XUnmapEvent
-type DestroyWindowEvent = C.XDestroyWindowEvent
+// Constants retain Go types while taking their values from Xlib headers.
+const (
+	NoWindow WindowID = C.None
+)
 
 const (
-	MapRequest    = C.MapRequest
-	UnmapNotify   = C.UnmapNotify
-	DestroyNotify = C.DestroyNotify
+	KeyPress         EventType = C.KeyPress
+	ButtonPress      EventType = C.ButtonPress
+	ButtonRelease    EventType = C.ButtonRelease
+	MotionNotify     EventType = C.MotionNotify
+	Expose           EventType = C.Expose
+	DestroyNotify    EventType = C.DestroyNotify
+	UnmapNotify      EventType = C.UnmapNotify
+	MapRequest       EventType = C.MapRequest
+	ConfigureRequest EventType = C.ConfigureRequest
+)
+
+const (
+	KeyPressMask             EventMask = C.KeyPressMask
+	SubstructureRedirectMask EventMask = C.SubstructureRedirectMask
+)
+
+const (
+	LockMask ModifierMask = C.LockMask
+	Mod2Mask ModifierMask = C.Mod2Mask
+	Mod4Mask ModifierMask = C.Mod4Mask
+)
+
+const (
+	KeyReturn KeySym = C.XK_Return
+)
+
+const (
+	CWX           ConfigureMask = C.CWX
+	CWY           ConfigureMask = C.CWY
+	CWWidth       ConfigureMask = C.CWWidth
+	CWHeight      ConfigureMask = C.CWHeight
+	CWBorderWidth ConfigureMask = C.CWBorderWidth
+	CWSibling     ConfigureMask = C.CWSibling
+	CWStackMode   ConfigureMask = C.CWStackMode
+)
+
+const (
+	IsUnmapped   MapState = C.IsUnmapped
+	IsUnviewable MapState = C.IsUnviewable
+	IsViewable   MapState = C.IsViewable
 )
 
 type XBackend struct {
 	display *C.Display
 	screen  C.int
+
+	// Native GC pointers never leave the backend. Public handles are Go IDs.
+	gcMu        sync.Mutex
+	contexts    map[GraphicsContext]C.GC
+	nextContext GraphicsContext
 }
 
 func NewXBackend() (*XBackend, error) {
 	C.XInitThreads()
-
 	display := C.XOpenDisplay(nil)
 	if display == nil {
 		return nil, errors.New("cannot open display")
 	}
 	C.SetupErrorHandler()
-
 	return &XBackend{
-		display: display,
-		screen:  C.XDefaultScreen(display),
+		display: display, screen: C.XDefaultScreen(display),
+		contexts: make(map[GraphicsContext]C.GC),
 	}, nil
 }
 
-func (b *XBackend) GetRootWindow() C.Window {
-	return C._DefaultRootWindow(b.display)
+func (b *XBackend) GetRootWindow() WindowID {
+	return WindowID(C._DefaultRootWindow(b.display))
 }
 
-func (b *XBackend) GetRect(window C.Window) *WindowRect {
-	var (
-		outWindow      C.Window
-		outBorderWidth C.uint
-		outDepth       C.uint
-
-		cX      C.int
-		cY      C.int
-		cWidth  C.uint
-		cHeight C.uint
-	)
-	var ret *WindowRect = nil
-	status := C.XGetGeometry(
-		b.display,
-		window,
-		&outWindow,
-		&cX,
-		&cY,
-		&cWidth,
-		&cHeight,
-		&outBorderWidth,
-		&outDepth,
-	)
-	if status != 0 {
-		ret = &WindowRect{}
-		ret.X = int(cX)
-		ret.Y = int(cY)
-		ret.Width = int(cWidth)
-		ret.Height = int(cHeight)
+func (b *XBackend) GetRect(window WindowID) *WindowRect {
+	var root C.Window
+	var border, depth, width, height C.uint
+	var x, y C.int
+	if C.XGetGeometry(b.display, C.Drawable(window), &root, &x, &y, &width, &height, &border, &depth) == 0 {
+		return nil
 	}
-	return ret
+	return &WindowRect{X: int(x), Y: int(y), Width: int(width), Height: int(height)}
 }
 
-func (b *XBackend) SelectInput(inputMask int64) {
-	C.XSelectInput(b.display, b.GetRootWindow(), C.long(inputMask))
+func (b *XBackend) SelectInput(mask EventMask) {
+	C.XSelectInput(b.display, C.Window(b.GetRootWindow()), C.long(mask))
 }
-func (b *XBackend) CreateFrame(parent C.Window, x, y, w, h C.int) C.Window {
-	frameWin := C.XCreateSimpleWindow(
-		b.display, parent,
-		x, y, C.uint(w), C.uint(h),
-		1, C.XBlackPixel(b.display, b.screen), C.XWhitePixel(b.display, b.screen),
-	)
-	C.XSelectInput(b.display, frameWin, C.ExposureMask|C.ButtonPressMask|C.SubstructureNotifyMask)
-	return frameWin
+func (b *XBackend) CreateFrame(parent WindowID, x, y, width, height int) WindowID {
+	frame := C.XCreateSimpleWindow(b.display, C.Window(parent), C.int(x), C.int(y), C.uint(width), C.uint(height),
+		1, C.XBlackPixel(b.display, b.screen), C.XWhitePixel(b.display, b.screen))
+	C.XSelectInput(b.display, frame, C.ExposureMask|C.ButtonPressMask|C.SubstructureNotifyMask)
+	return WindowID(frame)
 }
-
-func (b *XBackend) Reparent(client C.Window, frame C.Window, offsetX, offsetY C.int) {
-	C.XReparentWindow(b.display, client, frame, offsetX, offsetY)
+func (b *XBackend) Reparent(client, frame WindowID, x, y int) {
+	C.XReparentWindow(b.display, C.Window(client), C.Window(frame), C.int(x), C.int(y))
 }
-
-func (b *XBackend) DestroyWindow(win C.Window) {
-	C.XDestroyWindow(b.display, win)
-}
-
-func (b *XBackend) Flush() {
-	C.XFlush(b.display)
-}
-
+func (b *XBackend) DestroyWindow(window WindowID) { C.XDestroyWindow(b.display, C.Window(window)) }
+func (b *XBackend) Flush()                        { C.XFlush(b.display) }
 func (b *XBackend) Sync(discard bool) {
+	flag := C.int(C.False)
 	if discard {
-		C.XSync(b.display, C.True)
-	} else {
-		C.XSync(b.display, C.False)
+		flag = C.True
 	}
+	C.XSync(b.display, flag)
 }
 
 // GetWindowName returns a Go-owned copy and releases the Xlib allocation.
-func (b *XBackend) GetWindowName(window C.Window) string {
-	name := C.get_window_name(b.display, window)
+func (b *XBackend) GetWindowName(window WindowID) string {
+	name := C.get_window_name(b.display, C.Window(window))
 	if name == nil {
 		return "Window"
 	}
@@ -132,39 +130,50 @@ func (b *XBackend) GetWindowName(window C.Window) string {
 	return C.GoString(name)
 }
 
-// QueryTree copies child handles before releasing the Xlib allocation.
-func (b *XBackend) QueryTree(window C.Window) []C.Window {
+// QueryTree converts child IDs before releasing the Xlib allocation.
+func (b *XBackend) QueryTree(window WindowID) []WindowID {
 	var root, parent C.Window
 	var children *C.Window
 	var count C.uint
-	status := C.XQueryTree(b.display, window, &root, &parent, &children, &count)
+	status := C.XQueryTree(b.display, C.Window(window), &root, &parent, &children, &count)
 	if children != nil {
 		defer C.XFree(unsafe.Pointer(children))
 	}
 	if status == 0 || count == 0 {
 		return nil
 	}
-	return append([]C.Window(nil), unsafe.Slice(children, int(count))...)
+	result := make([]WindowID, int(count))
+	for i, child := range unsafe.Slice(children, int(count)) {
+		result[i] = WindowID(child)
+	}
+	return result
 }
 
-func (b *XBackend) GetWindowAttributes(window C.Window) C.XWindowAttributes {
+func (b *XBackend) GetWindowAttributes(window WindowID) WindowAttributes {
 	var attrs C.XWindowAttributes
-	C.XGetWindowAttributes(b.display, window, &attrs)
-	return attrs
+	C.XGetWindowAttributes(b.display, C.Window(window), &attrs)
+	return WindowAttributes{
+		X: int(attrs.x), Y: int(attrs.y), Width: int(attrs.width), Height: int(attrs.height),
+		MapState: MapState(attrs.map_state), OverrideRedirect: attrs.override_redirect != 0,
+	}
 }
-
-func (b *XBackend) MapWindow(window C.Window)              { C.XMapWindow(b.display, window) }
-func (b *XBackend) UnmapWindow(window C.Window)            { C.XUnmapWindow(b.display, window) }
-func (b *XBackend) UnmapSubwindows(window C.Window)        { C.XUnmapSubwindows(b.display, window) }
-func (b *XBackend) RaiseWindow(window C.Window)            { C.XRaiseWindow(b.display, window) }
-func (b *XBackend) MoveWindow(window C.Window, x, y C.int) { C.XMoveWindow(b.display, window, x, y) }
-func (b *XBackend) MoveResizeWindow(window C.Window, x, y C.int, width, height C.uint) {
-	C.XMoveResizeWindow(b.display, window, x, y, width, height)
+func (b *XBackend) MapWindow(window WindowID)       { C.XMapWindow(b.display, C.Window(window)) }
+func (b *XBackend) UnmapWindow(window WindowID)     { C.XUnmapWindow(b.display, C.Window(window)) }
+func (b *XBackend) UnmapSubwindows(window WindowID) { C.XUnmapSubwindows(b.display, C.Window(window)) }
+func (b *XBackend) RaiseWindow(window WindowID)     { C.XRaiseWindow(b.display, C.Window(window)) }
+func (b *XBackend) MoveWindow(window WindowID, x, y int) {
+	C.XMoveWindow(b.display, C.Window(window), C.int(x), C.int(y))
 }
-func (b *XBackend) ConfigureWindow(window C.Window, mask C.uint, changes *C.XWindowChanges) {
-	C.XConfigureWindow(b.display, window, mask, changes)
+func (b *XBackend) MoveResizeWindow(window WindowID, x, y int, width, height uint) {
+	C.XMoveResizeWindow(b.display, C.Window(window), C.int(x), C.int(y), C.uint(width), C.uint(height))
 }
-
+func (b *XBackend) ConfigureWindow(window WindowID, mask ConfigureMask, changes *WindowChanges) {
+	native := C.XWindowChanges{
+		x: C.int(changes.X), y: C.int(changes.Y), width: C.int(changes.Width), height: C.int(changes.Height),
+		border_width: C.int(changes.BorderWidth), sibling: C.Window(changes.Sibling), stack_mode: C.int(changes.StackMode),
+	}
+	C.XConfigureWindow(b.display, C.Window(window), C.uint(mask), &native)
+}
 func (b *XBackend) Pending() int { return int(C.XPending(b.display)) }
 func (b *XBackend) NextEvent() WMEvent {
 	var event C.XEvent
@@ -172,45 +181,120 @@ func (b *XBackend) NextEvent() WMEvent {
 	return parseXEvent(event)
 }
 
-func (b *XBackend) KeysymToKeycode(keysym C.KeySym) C.KeyCode {
-	return C.XKeysymToKeycode(b.display, keysym)
-}
-func (b *XBackend) StringToKeysym(name string) C.KeySym {
-	cName := C.CString(name)
-	defer C.free(unsafe.Pointer(cName))
-	return C.XStringToKeysym(cName)
-}
-func (b *XBackend) GrabKey(window C.Window, keycode C.int, modifiers C.uint) {
-	C.XGrabKey(b.display, keycode, modifiers, window, C.True, C.GrabModeAsync, C.GrabModeAsync)
+// parseXEvent copies only manager-facing fields out of the native union.
+// No native pointers or references to the event buffer escape into WMEvent.
+func parseXEvent(event C.XEvent) WMEvent {
+	ptr := unsafe.Pointer(&event)
+	result := WMEvent{Type: EventType((*C.XAnyEvent)(ptr)._type)}
+	switch result.Type {
+	case MapRequest:
+		data := (*C.XMapRequestEvent)(ptr)
+		result.Window = WindowID(data.window)
+		result.Data = MapRequestEvent{Parent: WindowID(data.parent)}
+	case UnmapNotify:
+		data := (*C.XUnmapEvent)(ptr)
+		result.Window = WindowID(data.window)
+		result.Data = UnmapEvent{FromConfigure: data.from_configure != 0}
+	case DestroyNotify:
+		data := (*C.XDestroyWindowEvent)(ptr)
+		result.Window = WindowID(data.window)
+		result.Data = DestroyWindowEvent{}
+	case ConfigureRequest:
+		data := (*C.XConfigureRequestEvent)(ptr)
+		result.Window = WindowID(data.window)
+		result.Data = ConfigureRequestEvent{
+			X: int(data.x), Y: int(data.y), Width: int(data.width), Height: int(data.height),
+			BorderWidth: int(data.border_width), Above: WindowID(data.above), Detail: int(data.detail),
+			ValueMask: ConfigureMask(data.value_mask),
+		}
+	case KeyPress:
+		data := (*C.XKeyEvent)(ptr)
+		result.Window = WindowID(data.window)
+		result.Data = KeyEvent{Subwindow: WindowID(data.subwindow), State: ModifierMask(data.state), Keycode: KeyCode(data.keycode)}
+	case Expose:
+		data := (*C.XExposeEvent)(ptr)
+		result.Window = WindowID(data.window)
+		result.Data = ExposeEvent{X: int(data.x), Y: int(data.y), Width: int(data.width), Height: int(data.height), Count: int(data.count)}
+	case ButtonPress, ButtonRelease:
+		data := (*C.XButtonEvent)(ptr)
+		result.Window = WindowID(data.window)
+		result.Data = ButtonEvent{
+			X: int(data.x), Y: int(data.y), XRoot: int(data.x_root), YRoot: int(data.y_root),
+			State: ModifierMask(data.state), Button: uint(data.button),
+		}
+	case MotionNotify:
+		data := (*C.XMotionEvent)(ptr)
+		result.Window = WindowID(data.window)
+		result.Data = MotionEvent{X: int(data.x), Y: int(data.y), XRoot: int(data.x_root), YRoot: int(data.y_root), State: ModifierMask(data.state)}
+	}
+	return result
 }
 
-// GrabPointer captures motion and release events during window dragging.
-func (b *XBackend) GrabPointer(window C.Window) {
-	C.XGrabPointer(b.display, window, C.False, C.uint(C.PointerMotionMask|C.ButtonReleaseMask),
+func (b *XBackend) KeysymToKeycode(keysym KeySym) KeyCode {
+	return KeyCode(C.XKeysymToKeycode(b.display, C.KeySym(keysym)))
+}
+func (b *XBackend) StringToKeysym(name string) KeySym {
+	native := C.CString(name)
+	defer C.free(unsafe.Pointer(native))
+	return KeySym(C.XStringToKeysym(native))
+}
+func (b *XBackend) GrabKey(window WindowID, keycode KeyCode, modifiers ModifierMask) {
+	C.XGrabKey(b.display, C.int(keycode), C.uint(modifiers), C.Window(window), C.True, C.GrabModeAsync, C.GrabModeAsync)
+}
+func (b *XBackend) GrabPointer(window WindowID) {
+	C.XGrabPointer(b.display, C.Window(window), C.False, C.uint(C.PointerMotionMask|C.ButtonReleaseMask),
 		C.GrabModeAsync, C.GrabModeAsync, C.None, C.None, C.CurrentTime)
 }
 func (b *XBackend) UngrabPointer() { C.XUngrabPointer(b.display, C.CurrentTime) }
-func (b *XBackend) TranslateCoordinates(source, destination C.Window, x, y C.int) (C.int, C.int) {
+func (b *XBackend) TranslateCoordinates(source, destination WindowID, x, y int) (int, int) {
 	var child C.Window
 	var outX, outY C.int
-	C.XTranslateCoordinates(b.display, source, destination, x, y, &outX, &outY, &child)
-	return outX, outY
+	C.XTranslateCoordinates(b.display, C.Window(source), C.Window(destination), C.int(x), C.int(y), &outX, &outY, &child)
+	return int(outX), int(outY)
 }
 
-func (b *XBackend) CreateGC(window C.Window) C.GC {
-	return C.XCreateGC(b.display, C.Drawable(window), 0, nil)
+func (b *XBackend) CreateGC(window WindowID) GraphicsContext {
+	native := C.XCreateGC(b.display, C.Drawable(window), 0, nil)
+	if native == nil {
+		return 0
+	}
+	b.gcMu.Lock()
+	defer b.gcMu.Unlock()
+	b.nextContext++
+	handle := b.nextContext
+	b.contexts[handle] = native
+	return handle
 }
-func (b *XBackend) FreeGC(gc C.GC) { C.XFreeGC(b.display, gc) }
-func (b *XBackend) SetForeground(gc C.GC, color uint64) {
-	C.XSetForeground(b.display, gc, C.ulong(color))
+func (b *XBackend) FreeGC(handle GraphicsContext) {
+	b.gcMu.Lock()
+	defer b.gcMu.Unlock()
+	if native := b.contexts[handle]; native != nil {
+		C.XFreeGC(b.display, native)
+		delete(b.contexts, handle)
+	}
 }
-func (b *XBackend) FillRectangle(window C.Window, gc C.GC, x, y C.int, width, height C.uint) {
-	C.XFillRectangle(b.display, C.Drawable(window), gc, x, y, width, height)
+func (b *XBackend) SetForeground(handle GraphicsContext, color uint64) {
+	b.gcMu.Lock()
+	defer b.gcMu.Unlock()
+	if native := b.contexts[handle]; native != nil {
+		C.XSetForeground(b.display, native, C.ulong(color))
+	}
+}
+func (b *XBackend) FillRectangle(window WindowID, handle GraphicsContext, x, y int, width, height uint) {
+	b.gcMu.Lock()
+	defer b.gcMu.Unlock()
+	if native := b.contexts[handle]; native != nil {
+		C.XFillRectangle(b.display, C.Drawable(window), native, C.int(x), C.int(y), C.uint(width), C.uint(height))
+	}
 }
 
 // DrawString preserves XDrawString's byte-oriented text semantics.
-func (b *XBackend) DrawString(window C.Window, gc C.GC, x, y C.int, text string, length int) {
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-	C.XDrawString(b.display, C.Drawable(window), gc, x, y, cText, C.int(length))
+func (b *XBackend) DrawString(window WindowID, handle GraphicsContext, x, y int, text string, length int) {
+	b.gcMu.Lock()
+	defer b.gcMu.Unlock()
+	if native := b.contexts[handle]; native != nil {
+		str := C.CString(text)
+		defer C.free(unsafe.Pointer(str))
+		C.XDrawString(b.display, C.Drawable(window), native, C.int(x), C.int(y), str, C.int(length))
+	}
 }

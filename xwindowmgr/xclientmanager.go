@@ -1,9 +1,5 @@
 package xwindowmgr
 
-/*
-#include <X11/Xlib.h>
-*/
-import "C"
 import (
 	"errors"
 	"sync"
@@ -18,16 +14,16 @@ type ClientManager struct {
 	mu sync.RWMutex
 
 	// two maps for fast access
-	byClientWindow map[C.Window]*Client
-	byFrameWindow  map[C.Window]*Client
+	byClientWindow map[WindowID]*Client
+	byFrameWindow  map[WindowID]*Client
 
 	mouseMovedWindow *Client
 }
 
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		byClientWindow: make(map[C.Window]*Client),
-		byFrameWindow:  make(map[C.Window]*Client),
+		byClientWindow: make(map[WindowID]*Client),
+		byFrameWindow:  make(map[WindowID]*Client),
 	}
 }
 
@@ -41,7 +37,7 @@ func (cm *ClientManager) Add(client *Client) {
 }
 
 // FindByClient find client object by window handle
-func (cm *ClientManager) FindByClient(win C.Window) (*Client, error) {
+func (cm *ClientManager) FindByClient(win WindowID) (*Client, error) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -53,7 +49,7 @@ func (cm *ClientManager) FindByClient(win C.Window) (*Client, error) {
 }
 
 // FindByFrame return client object by frame
-func (cm *ClientManager) FindByFrame(frame C.Window) (*Client, error) {
+func (cm *ClientManager) FindByFrame(frame WindowID) (*Client, error) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -65,7 +61,7 @@ func (cm *ClientManager) FindByFrame(frame C.Window) (*Client, error) {
 }
 
 // Remove client object by window handle
-func (cm *ClientManager) Remove(clientWin C.Window) (*Client, error) {
+func (cm *ClientManager) Remove(clientWin WindowID) (*Client, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 

@@ -1,16 +1,12 @@
 package xwindowmgr
 
-/*
-#include <X11/Xlib.h>
-*/
-import "C"
 import (
 	"context"
 	"fmt"
 )
 
 // dispatchEvent checks the payload before invoking the matching window handler.
-func dispatchEvent[T any](event WMEvent, handler func(C.Window, *T)) error {
+func dispatchEvent[T any](event WMEvent, handler func(WindowID, *T)) error {
 	data, ok := event.Data.(T)
 	if !ok {
 		return fmt.Errorf("event %d: expected payload %T, got %T", event.Type, *new(T), event.Data)
@@ -21,23 +17,23 @@ func dispatchEvent[T any](event WMEvent, handler func(C.Window, *T)) error {
 
 func (xm *XWindowManager) handleWMEvent(event WMEvent) error {
 	switch event.Type {
-	case C.MapRequest:
+	case MapRequest:
 		return dispatchEvent(event, xm.handleMapRequest)
-	case C.UnmapNotify:
+	case UnmapNotify:
 		return dispatchEvent(event, xm.handleUnmapNotify)
-	case C.KeyPress:
+	case KeyPress:
 		return dispatchEvent(event, xm.handleKeyPress)
-	case C.ConfigureRequest:
+	case ConfigureRequest:
 		return dispatchEvent(event, xm.handleConfigureRequest)
-	case C.Expose:
+	case Expose:
 		return dispatchEvent(event, xm.handleExpose)
-	case C.ButtonPress:
+	case ButtonPress:
 		return dispatchEvent(event, xm.handleButtonPress)
-	case C.ButtonRelease:
+	case ButtonRelease:
 		return dispatchEvent(event, xm.handleButtonRelease)
-	case C.MotionNotify:
+	case MotionNotify:
 		return dispatchEvent(event, xm.handleMotionEvent)
-	case C.DestroyNotify:
+	case DestroyNotify:
 		return dispatchEvent(event, xm.handleDestroyNotify)
 	default:
 		return fmt.Errorf("unhandled event type: %d", event.Type)

@@ -8,9 +8,9 @@ type Backend interface {
 	EventSource
 	GetRootWindow() WindowID
 	GetRect(WindowID) *WindowRect
-	SelectInput(int64)
-	CreateFrame(WindowID, Coordinate, Coordinate, Coordinate, Coordinate) WindowID
-	Reparent(WindowID, WindowID, Coordinate, Coordinate)
+	SelectInput(EventMask)
+	CreateFrame(WindowID, int, int, int, int) WindowID
+	Reparent(WindowID, WindowID, int, int)
 	DestroyWindow(WindowID)
 	Flush()
 	Sync(bool)
@@ -21,18 +21,18 @@ type Backend interface {
 	UnmapWindow(WindowID)
 	UnmapSubwindows(WindowID)
 	RaiseWindow(WindowID)
-	MoveWindow(WindowID, Coordinate, Coordinate)
-	MoveResizeWindow(WindowID, Coordinate, Coordinate, Dimension, Dimension)
-	ConfigureWindow(WindowID, Dimension, *WindowChanges)
+	MoveWindow(WindowID, int, int)
+	MoveResizeWindow(WindowID, int, int, uint, uint)
+	ConfigureWindow(WindowID, ConfigureMask, *WindowChanges)
 	KeysymToKeycode(KeySym) KeyCode
 	StringToKeysym(string) KeySym
-	GrabKey(WindowID, Coordinate, Dimension)
+	GrabKey(WindowID, KeyCode, ModifierMask)
 	GrabPointer(WindowID)
 	UngrabPointer()
-	TranslateCoordinates(WindowID, WindowID, Coordinate, Coordinate) (Coordinate, Coordinate)
+	TranslateCoordinates(WindowID, WindowID, int, int) (int, int)
 	CreateGC(WindowID) GraphicsContext
 	FreeGC(GraphicsContext)
 	SetForeground(GraphicsContext, uint64)
-	FillRectangle(WindowID, GraphicsContext, Coordinate, Coordinate, Dimension, Dimension)
-	DrawString(WindowID, GraphicsContext, Coordinate, Coordinate, string, int)
+	FillRectangle(WindowID, GraphicsContext, int, int, uint, uint)
+	DrawString(WindowID, GraphicsContext, int, int, string, int)
 }

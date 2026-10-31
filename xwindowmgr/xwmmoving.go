@@ -1,9 +1,5 @@
 package xwindowmgr
 
-/*
-#include <X11/Xlib.h>
-*/
-import "C"
 import (
 	"context"
 	"time"
@@ -37,7 +33,7 @@ func (xm *XWindowManager) moveWindows() {
 				move.VelocityY *= -1
 			}
 
-			xm.backend.MoveWindow(client.Frame, C.int(rect.X), C.int(rect.Y))
+			xm.backend.MoveWindow(client.Frame, rect.X, rect.Y)
 			xm.backend.Flush()
 		}
 	}

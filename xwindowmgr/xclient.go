@@ -1,9 +1,5 @@
 package xwindowmgr
 
-/*
-#include <X11/Xlib.h>
-*/
-import "C"
 import "math/rand/v2"
 
 const TitlebarWidth = 20
@@ -16,9 +12,9 @@ type WindowRect struct {
 }
 
 type MotionData struct {
-	StartMouseX C.int
-	StartMouseY C.int
-	StartAttr   C.XWindowAttributes
+	StartMouseX int
+	StartMouseY int
+	StartAttr   WindowAttributes
 
 	VelocityX int
 	VelocityY int
@@ -27,14 +23,14 @@ type MotionData struct {
 // Window controlled by WM
 type Client struct {
 	Title  string
-	Window C.Window   // Descriptor of window
-	Frame  C.Window   // Descriptor of window header - frame
+	Window WindowID   // Descriptor of window
+	Frame  WindowID   // Descriptor of window header - frame
 	Geom   WindowRect // Current geometry
 
 	Motion MotionData
 }
 
-func generateClientContext(backend Backend, window C.Window) *Client {
+func generateClientContext(backend Backend, window WindowID) *Client {
 	var ret Client
 	ret.Window = window
 
@@ -50,9 +46,9 @@ func generateClientContext(backend Backend, window C.Window) *Client {
 	return nil
 }
 
-func (cl *Client) CreateFrame(backend Backend, rootWin C.Window) {
+func (cl *Client) CreateFrame(backend Backend, rootWin WindowID) {
 
 	frameWidth := cl.Geom.Width + TitlebarWidth
-	cl.Frame = backend.CreateFrame(rootWin, C.int(cl.Geom.X), C.int(cl.Geom.Y), C.int(frameWidth), C.int(cl.Geom.Height))
+	cl.Frame = backend.CreateFrame(rootWin, cl.Geom.X, cl.Geom.Y, frameWidth, cl.Geom.Height)
 	backend.Reparent(cl.Window, cl.Frame, TitlebarWidth, 0)
 }
