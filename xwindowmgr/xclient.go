@@ -12,9 +12,11 @@ type WindowRect struct {
 }
 
 type MotionData struct {
-	StartMouseX int
-	StartMouseY int
-	StartAttr   WindowAttributes
+	StartMouseX  int
+	StartMouseY  int
+	StartAttr    WindowAttributes
+	LastTime     uint32
+	LastX, LastY int
 
 	VelocityX int
 	VelocityY int

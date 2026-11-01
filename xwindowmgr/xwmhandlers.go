@@ -1,6 +1,9 @@
 package xwindowmgr
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 func (xm *XWindowManager) handleMapRequest(evWindow WindowID, data *MapRequestEvent) {
 	fmt.Println("XWM: Handling MapRequest for window \"", evWindow, "\"")
@@ -96,7 +99,20 @@ func (xm *XWindowManager) handleConfigureRequest(evWindow WindowID, data *Config
 		return
 	}
 
-	changes.Width = data.Width + TitlebarWidth
+	// Keep the geometry used by animation in sync with accepted requests.
+	if data.ValueMask&CWX != 0 {
+		clientContext.Geom.X = data.X
+	}
+	if data.ValueMask&CWY != 0 {
+		clientContext.Geom.Y = data.Y
+	}
+	if data.ValueMask&CWWidth != 0 {
+		clientContext.Geom.Width = data.Width
+	}
+	if data.ValueMask&CWHeight != 0 {
+		clientContext.Geom.Height = data.Height
+	}
+	changes.Width = clientContext.Geom.Width + TitlebarWidth
 
 	xm.backend.ConfigureWindow(clientContext.Frame, data.ValueMask, &changes)
 
@@ -104,8 +120,8 @@ func (xm *XWindowManager) handleConfigureRequest(evWindow WindowID, data *Config
 		clientContext.Window,
 		TitlebarWidth,
 		0,
-		uint(data.Width),
-		uint(data.Height),
+		uint(clientContext.Geom.Width),
+		uint(clientContext.Geom.Height),
 	)
 
 	xm.backend.Flush()
@@ -162,10 +178,16 @@ func (xm *XWindowManager) handleButtonPress(evWindow WindowID, data *ButtonEvent
 			return
 		}
 
+		clientContext.Motion.LastTime = data.Time
+		clientContext.Motion.VelocityX = 0
+		clientContext.Motion.VelocityY = 0
 		clientContext.Motion.StartMouseX = data.XRoot
 		clientContext.Motion.StartMouseY = data.YRoot
 
 		clientContext.Motion.StartAttr = xm.backend.GetWindowAttributes(clientContext.Frame)
+		clientContext.Geom.X = clientContext.Motion.StartAttr.X
+		clientContext.Geom.Y = clientContext.Motion.StartAttr.Y
+		clientContext.Motion.LastX, clientContext.Motion.LastY = clientContext.Geom.X, clientContext.Geom.Y
 
 		xm.clientManager.SetMouseMovedClient(clientContext)
 
@@ -175,7 +197,10 @@ func (xm *XWindowManager) handleButtonPress(evWindow WindowID, data *ButtonEvent
 func (xm *XWindowManager) handleButtonRelease(evWindow WindowID, data *ButtonEvent) {
 	fmt.Println("XWM: Handling ButtonRelease for window \"", evWindow, "\"")
 	if clientContext := xm.clientManager.GetMouseMovedClient(); clientContext != nil {
-		lastX, lastY := xm.backend.TranslateCoordinates(evWindow, xm.rootWindow, 0, 0)
+		lastX, lastY := xm.backend.TranslateCoordinates(clientContext.Frame, xm.rootWindow, 0, 0)
+		if data.Time != 0 && clientContext.Motion.LastTime != 0 && data.Time-clientContext.Motion.LastTime > 100 {
+			clientContext.Motion.VelocityX, clientContext.Motion.VelocityY = 0, 0
+		}
 		xm.backend.UngrabPointer()
 		// update geometry - setting new X,Y positions
 		clientContext.Geom.X = lastX
@@ -192,10 +217,27 @@ func (xm *XWindowManager) handleMotionEvent(evWindow WindowID, data *MotionEvent
 
 		newX := clientContext.Motion.StartAttr.X + deltaX
 		newY := clientContext.Motion.StartAttr.Y + deltaY
-		// update velocity accordance to mouse event
-		clientContext.Motion.VelocityX = (newX - clientContext.Geom.X) % 7
-		clientContext.Motion.VelocityY = (newY - clientContext.Geom.Y) % 7
+		// Velocity is pixels per animation tick, sampled using X server time.
+		elapsed := uint32(movementInterval.Milliseconds())
+		if data.Time != 0 && clientContext.Motion.LastTime != 0 {
+			elapsed = data.Time - clientContext.Motion.LastTime
+		}
+		if elapsed > 0 {
+			clientContext.Motion.VelocityX = dragVelocity(newX-clientContext.Motion.LastX, elapsed)
+			clientContext.Motion.VelocityY = dragVelocity(newY-clientContext.Motion.LastY, elapsed)
+			clientContext.Motion.LastTime = data.Time
+			clientContext.Motion.LastX, clientContext.Motion.LastY = newX, newY
+		}
+		clientContext.Geom.X, clientContext.Geom.Y = newX, newY
 		xm.backend.MoveWindow(clientContext.Frame, newX, newY)
 		xm.backend.Flush()
 	}
+}
+
+// Transfer a quarter of the mouse speed, capped at 12 pixels per tick.
+const throwSpeedFactor = 0.25
+
+func dragVelocity(delta int, elapsed uint32) int {
+	velocity := float64(delta) * float64(movementInterval.Milliseconds()) / float64(elapsed) * throwSpeedFactor
+	return int(math.Round(max(-12, min(12, velocity))))
 }

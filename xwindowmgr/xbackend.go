@@ -220,12 +220,12 @@ func parseXEvent(event C.XEvent) WMEvent {
 		result.Window = WindowID(data.window)
 		result.Data = ButtonEvent{
 			X: int(data.x), Y: int(data.y), XRoot: int(data.x_root), YRoot: int(data.y_root),
-			State: ModifierMask(data.state), Button: uint(data.button),
+			State: ModifierMask(data.state), Button: uint(data.button), Time: uint32(data.time),
 		}
 	case MotionNotify:
 		data := (*C.XMotionEvent)(ptr)
 		result.Window = WindowID(data.window)
-		result.Data = MotionEvent{X: int(data.x), Y: int(data.y), XRoot: int(data.x_root), YRoot: int(data.y_root), State: ModifierMask(data.state)}
+		result.Data = MotionEvent{Time: uint32(data.time), X: int(data.x), Y: int(data.y), XRoot: int(data.x_root), YRoot: int(data.y_root), State: ModifierMask(data.state)}
 	}
 	return result
 }

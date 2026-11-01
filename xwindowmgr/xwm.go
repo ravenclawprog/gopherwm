@@ -66,9 +66,8 @@ func (xm *XWindowManager) Start(ctx context.Context) {
 	xm.ScanExistingWindows()
 
 	var workers sync.WaitGroup
-	workers.Add(3)
+	workers.Add(2)
 	go func() { defer workers.Done(); xm.EventLoop(ctx, xm.eventChan) }()
-	go func() { defer workers.Done(); xm.MovingWindowsLoop(ctx) }()
 	go func() { defer workers.Done(); xm.HandleWMEvent(ctx) }()
 	go func() { workers.Wait(); close(xm.loopDone) }()
 }

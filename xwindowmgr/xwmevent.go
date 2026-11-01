@@ -32,6 +32,7 @@ type ConfigureRequestEvent struct {
 }
 
 type ButtonEvent struct {
+	Time         uint32 // X server timestamp in milliseconds.
 	X, Y         int
 	XRoot, YRoot int
 	State        ModifierMask
@@ -39,6 +40,7 @@ type ButtonEvent struct {
 }
 
 type MotionEvent struct {
+	Time         uint32 // X server timestamp in milliseconds.
 	X, Y         int
 	XRoot, YRoot int
 	State        ModifierMask

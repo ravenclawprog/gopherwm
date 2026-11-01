@@ -3,6 +3,7 @@ package xwindowmgr
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // dispatchEvent checks the payload before invoking the matching window handler.
@@ -41,11 +42,17 @@ func (xm *XWindowManager) handleWMEvent(event WMEvent) error {
 }
 
 func (xm *XWindowManager) HandleWMEvent(ctx context.Context) {
+	ticker := time.NewTicker(movementInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			if xm.startMoving.Load() {
+				xm.moveWindows()
+			}
 		case event, ok := <-xm.eventChan:
 			if !ok {
 				return
