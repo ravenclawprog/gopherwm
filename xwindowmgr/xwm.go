@@ -13,6 +13,8 @@ type XWindowManager struct {
 	rootWindow    WindowID
 	rootGeom      WindowRect
 
+	focusedClient *Client
+
 	eventChan chan WMEvent
 	loopDone  chan struct{}
 
@@ -89,3 +91,15 @@ func (xm *XWindowManager) ScanExistingWindows() {
 
 // Wait blocks until all workers finish. Call it after Start.
 func (xm *XWindowManager) Wait() { <-xm.loopDone }
+
+func (xm *XWindowManager) FocusClient(client *Client, timestamp uint32) {
+	if client == nil {
+		return
+	}
+
+	xm.backend.RaiseWindow(client.Frame)
+	xm.backend.SetInputFocus(client.Window, timestamp)
+	xm.focusedClient = client
+
+	xm.backend.Flush()
+}

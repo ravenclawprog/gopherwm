@@ -173,10 +173,12 @@ func (xm *XWindowManager) handleExpose(evWindow WindowID, data *ExposeEvent) {
 func (xm *XWindowManager) handleButtonPress(evWindow WindowID, data *ButtonEvent) {
 	fmt.Println("XWM: Handling ButtonPress for window \"", evWindow, "\"")
 	if clientContext, err := xm.clientManager.FindByFrame(evWindow); err == nil && clientContext != nil {
-		if data.X > TitlebarWidth {
+		if data.X < 0 || data.X >= TitlebarWidth {
 			fmt.Println("Client zone click, skip")
 			return
 		}
+
+		xm.FocusClient(clientContext, data.Time)
 
 		clientContext.Motion.LastTime = data.Time
 		clientContext.Motion.VelocityX = 0

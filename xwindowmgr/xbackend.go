@@ -298,3 +298,12 @@ func (b *XBackend) DrawString(window WindowID, handle GraphicsContext, x, y int,
 		C.XDrawString(b.display, C.Drawable(window), native, C.int(x), C.int(y), str, C.int(length))
 	}
 }
+
+func (b *XBackend) SetInputFocus(window WindowID, timestamp uint32) {
+	C.XSetInputFocus(
+		b.display,
+		C.Window(window),
+		C.RevertToPointerRoot,
+		C.Time(timestamp),
+	)
+}

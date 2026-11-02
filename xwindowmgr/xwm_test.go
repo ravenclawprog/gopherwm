@@ -11,16 +11,17 @@ import (
 )
 
 type command struct {
-	name    string
-	window  wm.WindowID
-	frame   wm.WindowID
-	rect    wm.WindowRect
-	mask    wm.ConfigureMask
-	changes wm.WindowChanges
-	context wm.GraphicsContext
-	color   uint64
-	text    string
-	length  int
+	name      string
+	window    wm.WindowID
+	frame     wm.WindowID
+	rect      wm.WindowRect
+	mask      wm.ConfigureMask
+	changes   wm.WindowChanges
+	context   wm.GraphicsContext
+	color     uint64
+	text      string
+	length    int
+	timestamp uint32
 }
 
 // fakeBackend models windows and records commands at the public backend boundary.
@@ -112,7 +113,12 @@ func (b *fakeBackend) GetWindowAttributes(window wm.WindowID) wm.WindowAttribute
 	rect := b.rects[window]
 	return wm.WindowAttributes{X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height, MapState: wm.IsViewable}
 }
-func (b *fakeBackend) RaiseWindow(wm.WindowID) { panic("unexpected RaiseWindow") }
+func (b *fakeBackend) RaiseWindow(window wm.WindowID) {
+	b.commands <- command{name: "raise", window: window}
+}
+func (b *fakeBackend) SetInputFocus(window wm.WindowID, timestamp uint32) {
+	b.commands <- command{name: "focus", window: window, timestamp: timestamp}
+}
 func (b *fakeBackend) MoveWindow(window wm.WindowID, x, y int) {
 	b.mu.Lock()
 	rect := b.rects[window]
@@ -321,12 +327,29 @@ func TestXWindowManagerDragUsesSignedCoordinates(t *testing.T) {
 	backend := newFakeBackend()
 	startManager(t, backend)
 	openWindow(t, backend, 100)
-	backend.events <- wm.WMEvent{Type: wm.ButtonPress, Window: 100, Data: wm.ButtonEvent{X: 5, XRoot: 40, YRoot: 60, Button: 1}}
-	expectCommands(t, backend, command{name: "grabPointer", window: 100})
+	backend.events <- wm.WMEvent{Type: wm.ButtonPress, Window: 100, Data: wm.ButtonEvent{Time: 123, X: 5, XRoot: 40, YRoot: 60, Button: 1}}
+	expectCommands(t, backend,
+		command{name: "raise", window: 100},
+		command{name: "focus", window: 42, timestamp: 123},
+		command{name: "grabPointer", window: 100},
+	)
 	backend.events <- wm.WMEvent{Type: wm.MotionNotify, Window: 100, Data: wm.MotionEvent{XRoot: 0, YRoot: 10}}
 	expectCommands(t, backend, command{name: "move", window: 100, rect: wm.WindowRect{X: -30, Y: -30}})
 	backend.events <- wm.WMEvent{Type: wm.ButtonRelease, Window: 100, Data: wm.ButtonEvent{Button: 1}}
 	expectCommands(t, backend, command{name: "ungrabPointer"})
+}
+
+func TestXWindowManagerIgnoresClicksOutsideTitlebar(t *testing.T) {
+	backend := newFakeBackend()
+	startManager(t, backend)
+	openWindow(t, backend, 100)
+	for _, x := range []int{-1, wm.TitlebarWidth, wm.TitlebarWidth + 1} {
+		backend.events <- wm.WMEvent{Type: wm.ButtonPress, Window: 100, Data: wm.ButtonEvent{X: x, Button: 1}}
+	}
+	// The following map request is processed after the clicks. Any focus or
+	// pointer grab command would appear before these map commands.
+	backend.events <- wm.WMEvent{Type: wm.MapRequest, Window: 42, Data: wm.MapRequestEvent{}}
+	expectCommands(t, backend, command{name: "map", window: 100}, command{name: "map", window: 42})
 }
 
 func TestXWindowManagerScansOnlyManagedVisibleWindows(t *testing.T) {

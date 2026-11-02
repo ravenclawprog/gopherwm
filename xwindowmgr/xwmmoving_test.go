@@ -19,7 +19,9 @@ func (b *movementBackend) MoveWindow(_ WindowID, x, y int) {
 		b.moves <- x
 	}
 }
-func (b *movementBackend) Flush() {}
+func (b *movementBackend) Flush()                         {}
+func (b *movementBackend) RaiseWindow(WindowID)           {}
+func (b *movementBackend) SetInputFocus(WindowID, uint32) {}
 func (b *movementBackend) GetWindowAttributes(WindowID) WindowAttributes {
 	return WindowAttributes{X: b.x, Y: b.y}
 }

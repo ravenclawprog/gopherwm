@@ -35,4 +35,5 @@ type Backend interface {
 	SetForeground(GraphicsContext, uint64)
 	FillRectangle(WindowID, GraphicsContext, int, int, uint, uint)
 	DrawString(WindowID, GraphicsContext, int, int, string, int)
+	SetInputFocus(WindowID, uint32)
 }
