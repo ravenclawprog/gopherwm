@@ -137,6 +137,9 @@ func (b *fakeBackend) GrabPointer(window wm.WindowID) {
 	b.commands <- command{name: "grabPointer", window: window}
 }
 func (b *fakeBackend) UngrabPointer() { b.commands <- command{name: "ungrabPointer"} }
+func (b *fakeBackend) ReplayPointer(timestamp uint32) {
+	b.commands <- command{name: "replayPointer", timestamp: timestamp}
+}
 func (b *fakeBackend) TranslateCoordinates(source, destination wm.WindowID, x, y int) (int, int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -339,15 +342,25 @@ func TestXWindowManagerDragUsesSignedCoordinates(t *testing.T) {
 	expectCommands(t, backend, command{name: "ungrabPointer"})
 }
 
-func TestXWindowManagerIgnoresClicksOutsideTitlebar(t *testing.T) {
+func TestXWindowManagerContentClicksFocusAndReplayWithoutDragging(t *testing.T) {
 	backend := newFakeBackend()
 	startManager(t, backend)
 	openWindow(t, backend, 100)
-	for _, x := range []int{-1, wm.TitlebarWidth, wm.TitlebarWidth + 1} {
-		backend.events <- wm.WMEvent{Type: wm.ButtonPress, Window: 100, Data: wm.ButtonEvent{X: x, Button: 1}}
+	for _, x := range []int{wm.TitlebarWidth, wm.TitlebarWidth + 1} {
+		for _, button := range []uint{1, 3, 4} {
+			backend.events <- wm.WMEvent{Type: wm.ButtonPress, Window: 100, Data: wm.ButtonEvent{Time: 123, X: x, Button: button, State: wm.LockMask | wm.Mod2Mask}}
+			expectCommands(t, backend,
+				command{name: "raise", window: 100},
+				command{name: "focus", window: 42, timestamp: 123},
+				command{name: "replayPointer", timestamp: 123},
+			)
+			backend.events <- wm.WMEvent{Type: wm.MotionNotify, Window: 100, Data: wm.MotionEvent{XRoot: 80, YRoot: 90}}
+			backend.events <- wm.WMEvent{Type: wm.ButtonRelease, Window: 100, Data: wm.ButtonEvent{Button: button}}
+		}
 	}
-	// The following map request is processed after the clicks. Any focus or
-	// pointer grab command would appear before these map commands.
+	backend.events <- wm.WMEvent{Type: wm.ButtonPress, Window: 100, Data: wm.ButtonEvent{Time: 124, X: -1, Button: 1}}
+	expectCommands(t, backend, command{name: "replayPointer", timestamp: 124})
+	// A following request proves that no drag or pointer grab was started.
 	backend.events <- wm.WMEvent{Type: wm.MapRequest, Window: 42, Data: wm.MapRequestEvent{}}
 	expectCommands(t, backend, command{name: "map", window: 100}, command{name: "map", window: 42})
 }

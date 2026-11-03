@@ -29,6 +29,8 @@ type Backend interface {
 	GrabKey(WindowID, KeyCode, ModifierMask)
 	GrabPointer(WindowID)
 	UngrabPointer()
+	// ReplayPointer releases a passive synchronous grab and reprocesses its click.
+	ReplayPointer(uint32)
 	TranslateCoordinates(WindowID, WindowID, int, int) (int, int)
 	CreateGC(WindowID) GraphicsContext
 	FreeGC(GraphicsContext)

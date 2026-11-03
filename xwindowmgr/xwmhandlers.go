@@ -173,12 +173,18 @@ func (xm *XWindowManager) handleExpose(evWindow WindowID, data *ExposeEvent) {
 func (xm *XWindowManager) handleButtonPress(evWindow WindowID, data *ButtonEvent) {
 	fmt.Println("XWM: Handling ButtonPress for window \"", evWindow, "\"")
 	if clientContext, err := xm.clientManager.FindByFrame(evWindow); err == nil && clientContext != nil {
-		if data.X < 0 || data.X >= TitlebarWidth {
-			fmt.Println("Client zone click, skip")
+		if data.X < 0 {
+			xm.backend.ReplayPointer(data.Time)
+			xm.backend.Flush()
 			return
 		}
 
 		xm.FocusClient(clientContext, data.Time)
+		if data.X >= TitlebarWidth {
+			xm.backend.ReplayPointer(data.Time)
+			xm.backend.Flush()
+			return
+		}
 
 		clientContext.Motion.LastTime = data.Time
 		clientContext.Motion.VelocityX = 0
@@ -193,6 +199,7 @@ func (xm *XWindowManager) handleButtonPress(evWindow WindowID, data *ButtonEvent
 
 		xm.clientManager.SetMouseMovedClient(clientContext)
 
+		// The active drag grab replaces the passive grab and thaws the pointer.
 		xm.backend.GrabPointer(evWindow)
 	}
 }

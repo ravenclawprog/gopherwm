@@ -105,6 +105,11 @@ func (b *XBackend) CreateFrame(parent WindowID, x, y, width, height int) WindowI
 	frame := C.XCreateSimpleWindow(b.display, C.Window(parent), C.int(x), C.int(y), C.uint(width), C.uint(height),
 		1, C.XBlackPixel(b.display, b.screen), C.XWhitePixel(b.display, b.screen))
 	C.XSelectInput(b.display, frame, C.ExposureMask|C.ButtonPressMask|C.SubstructureNotifyMask)
+	// Intercept clicks even when an application selects ButtonPress itself.
+	// Replaying a content click skips this ancestor grab and delivers the
+	// original event to the application (including its child windows).
+	C.XGrabButton(b.display, C.AnyButton, C.AnyModifier, frame, C.False,
+		C.ButtonPressMask, C.GrabModeSync, C.GrabModeAsync, C.None, C.None)
 	return WindowID(frame)
 }
 func (b *XBackend) Reparent(client, frame WindowID, x, y int) {
@@ -246,6 +251,9 @@ func (b *XBackend) GrabPointer(window WindowID) {
 		C.GrabModeAsync, C.GrabModeAsync, C.None, C.None, C.CurrentTime)
 }
 func (b *XBackend) UngrabPointer() { C.XUngrabPointer(b.display, C.CurrentTime) }
+func (b *XBackend) ReplayPointer(timestamp uint32) {
+	C.XAllowEvents(b.display, C.ReplayPointer, C.Time(timestamp))
+}
 func (b *XBackend) TranslateCoordinates(source, destination WindowID, x, y int) (int, int) {
 	var child C.Window
 	var outX, outY C.int
