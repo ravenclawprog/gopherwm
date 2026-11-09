@@ -5,14 +5,10 @@ import (
 	"time"
 )
 
-// EventSource supplies decoded events. NextEvent is called only when Pending is positive.
-// The event loop must be the sole consumer of the source.
 type EventSource interface {
 	Pending() int
 	NextEvent() WMEvent
 }
-
-var _ EventSource = (*XBackend)(nil)
 
 const eventPollInterval = 15 * time.Millisecond
 
@@ -40,7 +36,6 @@ func (xm *XWindowManager) EventLoop(ctx context.Context, eventChan chan<- WMEven
 	}
 }
 
-// sendWMEvent keeps a full event queue from blocking shutdown.
 func sendWMEvent(ctx context.Context, events chan<- WMEvent, event WMEvent) bool {
 	select {
 	case <-ctx.Done():

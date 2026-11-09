@@ -186,8 +186,6 @@ func (b *XBackend) NextEvent() WMEvent {
 	return parseXEvent(event)
 }
 
-// parseXEvent copies only manager-facing fields out of the native union.
-// No native pointers or references to the event buffer escape into WMEvent.
 func parseXEvent(event C.XEvent) WMEvent {
 	ptr := unsafe.Pointer(&event)
 	result := WMEvent{Type: EventType((*C.XAnyEvent)(ptr)._type)}

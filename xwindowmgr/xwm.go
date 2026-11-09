@@ -89,7 +89,6 @@ func (xm *XWindowManager) ScanExistingWindows() {
 	}
 }
 
-// Wait blocks until all workers finish. Call it after Start.
 func (xm *XWindowManager) Wait() { <-xm.loopDone }
 
 func (xm *XWindowManager) FocusClient(client *Client, timestamp uint32) {
