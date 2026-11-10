@@ -41,8 +41,7 @@ func TestConfigSuccessfull(t *testing.T) {
 		},
 	}
 	if !reflect.DeepEqual(config, wantConfig) {
-		errStr, _ := fmt.Scanf("config mismatch:\ngot: %+v\nwant: %+v", config, wantConfig)
-		t.Fatal(errStr)
+		t.Fatalf("config mismatch:\ngot:  %+v\nwant: %+v", config, wantConfig)
 	}
 }
 
@@ -54,8 +53,7 @@ func TestConfigSuccessfullWithDefaults(t *testing.T) {
 	}
 	wantConfig := wm.DefaultConfig()
 	if !reflect.DeepEqual(config, wantConfig) {
-		errStr, _ := fmt.Scanf("config mismatch:\ngot: %+v\nwant: %+v", config, wantConfig)
-		t.Fatal(errStr)
+		t.Fatalf("config mismatch:\ngot:  %+v\nwant: %+v", config, wantConfig)
 	}
 }
 
@@ -98,6 +96,23 @@ func TestConfigParseErrorSingleValue(t *testing.T) {
   "bindings": []
 }
   {}
+`
+	configPath := t.TempDir() + "/config.json"
+	err := os.WriteFile(configPath, []byte(unsuccessfulJson), 0644)
+	if err != nil {
+		t.Fatal("Error at saving json file:", err)
+	}
+	_, err = wm.LoadConfig(configPath)
+	if err == nil {
+		t.Fatal("want: error, but got: nothing")
+	}
+	fmt.Println("want:parse error, got:", err)
+}
+
+func TestConfigParseIncomplete(t *testing.T) {
+	unsuccessfulJson := `
+{
+  "bindings":
 `
 	configPath := t.TempDir() + "/config.json"
 	err := os.WriteFile(configPath, []byte(unsuccessfulJson), 0644)
