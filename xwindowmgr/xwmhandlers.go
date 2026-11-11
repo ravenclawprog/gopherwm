@@ -65,15 +65,22 @@ func (xm *XWindowManager) handleKeyPress(evWindow WindowID, data *KeyEvent) {
 	if data.Subwindow != NoWindow {
 		xm.backend.RaiseWindow(data.Subwindow)
 	}
+
 	cleanModifiers := data.State &^ (Mod2Mask | LockMask)
-	targetCode := xm.backend.KeysymToKeycode(KeyReturn)
-	if data.Keycode == targetCode && cleanModifiers == Mod4Mask {
-		fmt.Println("Win + Enter! Running xterm...")
-		Spawn("xterm")
+	key := shortcutKey{
+		keycode:   data.Keycode,
+		modifiers: cleanModifiers,
 	}
-	targetCode = xm.backend.KeysymToKeycode(xm.backend.StringToKeysym("m"))
-	if data.Keycode == targetCode && cleanModifiers == Mod4Mask {
-		fmt.Println("Win + m! Start moving windows!")
+
+	action, exists := xm.shortcuts[key]
+	if !exists {
+		return
+	}
+
+	switch action.action {
+	case "spawn":
+		Spawn(action.command[0], action.command[1:]...)
+	case "toggle_motion":
 		currentMovingState := xm.startMoving.Load()
 		xm.startMoving.Store(!currentMovingState)
 	}

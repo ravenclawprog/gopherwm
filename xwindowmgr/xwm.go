@@ -15,6 +15,8 @@ type XWindowManager struct {
 
 	focusedClient *Client
 
+	shortcuts map[shortcutKey]shortcutAction
+
 	eventChan chan WMEvent
 	loopDone  chan struct{}
 
@@ -22,22 +24,29 @@ type XWindowManager struct {
 	started     atomic.Bool
 }
 
-func NewXWindowManager() (*XWindowManager, error) {
+func NewXWindowManager(config Config) (*XWindowManager, error) {
+	if errConfig := config.Validate(); errConfig != nil {
+		return nil, errConfig
+	}
 	backend, err := NewXBackend()
 	if err != nil {
 		return nil, err
 	}
 
-	return NewXWindowManagerWithBackend(backend)
+	return NewXWindowManagerWithBackend(backend, config)
 }
 
-// NewXWindowManagerWithBackend initializes a manager without opening a display.
-// The supplied backend must be non-nil and remains owned by the caller.
-func NewXWindowManagerWithBackend(backend Backend) (*XWindowManager, error) {
+func NewXWindowManagerWithBackend(backend Backend, config Config) (*XWindowManager, error) {
 	if backend == nil {
 		return nil, fmt.Errorf("backend is required")
 	}
-
+	if errConfig := config.Validate(); errConfig != nil {
+		return nil, errConfig
+	}
+	shortcuts, err := compileShortcuts(backend, config)
+	if err != nil {
+		return nil, err
+	}
 	rootWin := backend.GetRootWindow()
 	rootGeo := backend.GetRect(rootWin)
 	if rootGeo == nil {
@@ -46,6 +55,7 @@ func NewXWindowManagerWithBackend(backend Backend) (*XWindowManager, error) {
 
 	return &XWindowManager{
 		backend:       backend,
+		shortcuts:     shortcuts,
 		clientManager: NewClientManager(),
 		rootWindow:    rootWin,
 		rootGeom:      *rootGeo,

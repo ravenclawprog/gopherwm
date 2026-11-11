@@ -125,3 +125,64 @@ func TestConfigParseIncomplete(t *testing.T) {
 	}
 	fmt.Println("want:parse error, got:", err)
 }
+
+func TestBindingValidateSpawn(t *testing.T) {
+	var wantBinding wm.Binding = wm.Binding{
+		Key:       "Return",
+		Modifiers: []string{"Super"},
+		Action:    "spawn",
+		Command:   []string{"xterm"},
+	}
+	err := wantBinding.Validate()
+	if err != nil {
+		t.Fatal("Validation fail, want: no error, but got:", err)
+	}
+}
+
+func TestBindingValidateToggleMotion(t *testing.T) {
+	var wantBinding wm.Binding = wm.Binding{
+		Key:       "m",
+		Modifiers: []string{"Super"},
+		Action:    "toggle_motion",
+	}
+	err := wantBinding.Validate()
+	if err != nil {
+		t.Fatal("Validation fail, want: no error, but got:", err)
+	}
+}
+
+func TestBindingValidateKeyEmptyFail(t *testing.T) {
+	var wantBinding wm.Binding = wm.Binding{
+		Key:       "",
+		Modifiers: []string{"Super"},
+		Action:    "spawn",
+		Command:   []string{"xterm"},
+	}
+	if err := wantBinding.Validate(); err == nil {
+		t.Fatal("Validation fail, want: err, but got: noting")
+	}
+}
+
+func TestBindingValidateKeySpacesFail(t *testing.T) {
+	var wantBinding wm.Binding = wm.Binding{
+		Key:       "  \t",
+		Modifiers: []string{"Super"},
+		Action:    "spawn",
+		Command:   []string{"xterm"},
+	}
+	if err := wantBinding.Validate(); err == nil {
+		t.Fatal("Validation fail, want: err, but got: noting")
+	}
+}
+
+func TestBindingValidateActionSpawnFail(t *testing.T) {
+	var wantBinding wm.Binding = wm.Binding{
+		Key:       "Return",
+		Modifiers: []string{"Super"},
+		Action:    "spawn",
+		Command:   []string{},
+	}
+	if err := wantBinding.Validate(); err == nil {
+		t.Fatal("Validation fail, want: err, but got: noting")
+	}
+}

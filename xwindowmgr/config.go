@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -65,4 +66,35 @@ func LoadConfig(path string) (Config, error) {
 	}
 
 	return config, nil
+}
+
+func (b Binding) Validate() error {
+	if strings.TrimSpace(b.Key) == "" {
+		return fmt.Errorf("Empty key")
+	}
+	switch b.Action {
+	case "spawn":
+		if len(b.Command) == 0 {
+			return fmt.Errorf("Action spawn doesn't have a command")
+		}
+		if strings.TrimSpace(b.Command[0]) == "" {
+			return fmt.Errorf("spawn command must not be blank")
+		}
+	case "toggle_motion":
+		if len(b.Command) != 0 {
+			return fmt.Errorf("Action toggle_motion doesn't need a command field")
+		}
+	default:
+		return fmt.Errorf("Unknown action %q", b.Action)
+	}
+	return nil
+}
+
+func (c Config) Validate() error {
+	for i, b := range c.Bindings {
+		if err := b.Validate(); err != nil {
+			return fmt.Errorf("binding %d: %w", i+1, err)
+		}
+	}
+	return nil
 }

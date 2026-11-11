@@ -36,9 +36,12 @@ const (
 )
 
 const (
-	LockMask ModifierMask = C.LockMask
-	Mod2Mask ModifierMask = C.Mod2Mask
-	Mod4Mask ModifierMask = C.Mod4Mask
+	LockMask    ModifierMask = C.LockMask
+	Mod2Mask    ModifierMask = C.Mod2Mask
+	Mod4Mask    ModifierMask = C.Mod4Mask
+	ShiftMask   ModifierMask = C.ShiftMask
+	ControlMask ModifierMask = C.ControlMask
+	AltMask     ModifierMask = C.Mod1Mask
 )
 
 const (

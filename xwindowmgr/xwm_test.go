@@ -72,9 +72,29 @@ func (b *fakeBackend) QueryTree(wm.WindowID) []wm.WindowID {
 	defer b.mu.Unlock()
 	return append([]wm.WindowID(nil), b.children...)
 }
-func (b *fakeBackend) GetWindowName(wm.WindowID) string                 { return "Test window" }
-func (b *fakeBackend) KeysymToKeycode(wm.KeySym) wm.KeyCode             { return 1 }
-func (b *fakeBackend) StringToKeysym(string) wm.KeySym                  { return 1 }
+
+func (b *fakeBackend) GetWindowName(wm.WindowID) string { return "Test window" }
+
+func (b *fakeBackend) KeysymToKeycode(sym wm.KeySym) wm.KeyCode {
+	switch sym {
+	case 1:
+		return 36
+	case 2:
+		return 58
+	default:
+		return 0
+	}
+}
+func (b *fakeBackend) StringToKeysym(name string) wm.KeySym {
+	switch name {
+	case "Return":
+		return 1
+	case "m":
+		return 2
+	default:
+		return 0
+	}
+}
 func (b *fakeBackend) GrabKey(wm.WindowID, wm.KeyCode, wm.ModifierMask) {}
 func (b *fakeBackend) CreateFrame(parent wm.WindowID, x, y, w, h int) wm.WindowID {
 	b.mu.Lock()
@@ -165,7 +185,7 @@ func (b *fakeBackend) DrawString(window wm.WindowID, gc wm.GraphicsContext, x, y
 
 func newManager(t *testing.T, backend wm.Backend) *wm.XWindowManager {
 	t.Helper()
-	manager, err := wm.NewXWindowManagerWithBackend(backend)
+	manager, err := wm.NewXWindowManagerWithBackend(backend, wm.DefaultConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,12 +299,12 @@ func TestXWindowManagerStartIsIdempotent(t *testing.T) {
 }
 
 func TestXWindowManagerRejectsMissingBackendOrGeometry(t *testing.T) {
-	if _, err := wm.NewXWindowManagerWithBackend(nil); err == nil {
+	if _, err := wm.NewXWindowManagerWithBackend(nil, wm.DefaultConfig()); err == nil {
 		t.Fatal("expected missing backend error")
 	}
 	backend := newFakeBackend()
 	delete(backend.rects, 1)
-	if _, err := wm.NewXWindowManagerWithBackend(backend); err == nil {
+	if _, err := wm.NewXWindowManagerWithBackend(backend, wm.DefaultConfig()); err == nil {
 		t.Fatal("expected missing geometry error")
 	}
 }
